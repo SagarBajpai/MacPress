@@ -6,45 +6,90 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("MacPress").font(.headline)
-                    Text("Automatically compresses your Mac screen recordings.")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(model.state).font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(.bottom, 8)
-
-            presetPicker
-
-            watchedFolderSection
+            header
 
             if let file = model.currentFile {
-                Divider()
-                currentJob(file).padding(.vertical, 11)
+                currentJob(file)
+                    .padding(.top, 14)
             }
 
             if let error = model.errorMessage {
-                Divider()
-                failure(error).padding(.vertical, 11)
+                failure(error)
+                    .padding(.top, 12)
             }
 
-            if !model.recent.isEmpty {
-                Divider()
-                recentJobs.padding(.vertical, 10)
-            }
+            qualitySection
+                .padding(.top, 14)
 
-            Divider().padding(.bottom, 6)
-            MenuActionRow(title: "Open Watched Folder", symbol: "folder") {
-                if let folder = model.watchedFolder { NSWorkspace.shared.open(folder) }
+            watchedFolderSection
+                .padding(.top, 14)
+
+            recentJobs.padding(.top, 14)
+
+            secondaryActions
+                .padding(.top, 14)
+        }
+        .padding(14)
+        .frame(width: 336)
+        .onAppear { model.refreshLaunchAtLogin() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("MacPress")
+                    .font(.headline)
+                Text("Automatically compresses your Mac screen recordings.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            MenuActionRow(title: "View Logs", symbol: "doc.text") { openLogs() }
-            MenuActionRow(title: "Advance Settings…", symbol: "slider.horizontal.3") {
+            Spacer(minLength: 8)
+            Text(model.state)
+                .font(.caption)
+                .foregroundStyle(model.isCompressing ? .primary : .secondary)
+                .padding(.top, 2)
+        }
+    }
+
+    private var qualitySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("QUALITY")
+            HStack(spacing: 8) {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text("Compression Quality")
+                    .font(.subheadline)
+                Spacer(minLength: 8)
+                Picker("Compression Quality", selection: Binding(
+                    get: { model.compressionConfiguration.preset },
+                    set: { model.applyPreset($0) }
+                )) {
+                    ForEach(CompressionPreset.selectable, id: \.self) { preset in
+                        Text(preset.displayName).tag(preset)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .disabled(model.isCompressing)
+                .help(model.isCompressing ? "Quality can't be changed while compressing." : model.compressionConfiguration.preset.detail)
+            }
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+            .help(model.isCompressing ? "Quality can't be changed while compressing." : "Choose the compression quality")
+        }
+    }
+
+    private var secondaryActions: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Divider()
+                .padding(.bottom, 5)
+            MenuActionRow(title: "Advanced Settings…", symbol: "slider.horizontal.3") {
                 model.openAdvancedSettings()
             }
-
+            MenuActionRow(title: "View Logs", symbol: "doc.text") { openLogs() }
             Toggle(isOn: Binding(
                 get: { model.launchAtLoginEnabled },
                 set: { model.setLaunchAtLogin($0) }
@@ -54,62 +99,61 @@ struct MenuBarView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-
-            Divider().padding(.vertical, 6)
+            .padding(.vertical, 5)
+            Divider()
+                .padding(.vertical, 5)
             MenuActionRow(title: "Quit", symbol: "power") {
                 NSApplication.shared.terminate(nil)
             }
         }
-        .padding(12)
-        .frame(width: 320)
-        .onAppear { model.refreshLaunchAtLogin() }
     }
 
-    private var presetPicker: some View {
-        HStack(spacing: 8) {
-            Text("Quality")
-                .font(.subheadline)
-            Spacer(minLength: 8)
-            Picker("Quality", selection: Binding(
-                get: { model.compressionConfiguration.preset },
-                set: { model.applyPreset($0) }
-            )) {
-                ForEach(CompressionPreset.selectable, id: \.self) { preset in
-                    Text(preset.displayName).tag(preset)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .frame(width: 132)
-            .help(model.compressionConfiguration.preset.detail)
-            .disabled(model.isCompressing)
-            .help(model.isCompressing ? "Quality can't be changed while compressing." : model.compressionConfiguration.preset.detail)
-        }
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .tracking(0.5)
     }
 
     private var watchedFolderSection: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 5) {
-                Text("Watched Folder").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("WATCHING")
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.watchedFolder?.lastPathComponent ?? "No folder selected")
+                        .font(.subheadline)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let folder = model.watchedFolder {
+                        Text(folder.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(folder.path)
+                    }
+                }
+                Spacer(minLength: 4)
                 Image(systemName: "info.circle").font(.caption).foregroundStyle(.secondary)
                     .help("MacPress watches this folder for new .mov recordings and saves the compressed video in the same folder.")
-                Spacer()
+            }
+            HStack(spacing: 14) {
+                Button("Open in Finder") {
+                    if let folder = model.watchedFolder { NSWorkspace.shared.open(folder) }
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+                .disabled(model.watchedFolder == nil)
                 Button("Change…") { model.presentFolderPicker() }
-                    .buttonStyle(.link).font(.caption)
+                    .buttonStyle(.link)
+                    .font(.caption)
                     .disabled(model.isCompressing)
                     .help(model.isCompressing ? "Folder changes are unavailable while compressing." : "Choose a different folder")
             }
-            if let folder = model.watchedFolder {
-                Text(folder.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
-                    .font(.caption).lineLimit(1).truncationMode(.middle)
-                    .help(folder.path)
-            } else {
-                Text("No folder selected").font(.caption).foregroundStyle(.orange)
-            }
         }
-        .padding(.top, 8)
     }
 
     @ViewBuilder
@@ -178,6 +222,8 @@ struct MenuBarView: View {
                 .foregroundStyle(.secondary)
             }
         }
+        .padding(10)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func overallProgress(_ fraction: Double) -> some View {
@@ -231,6 +277,11 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(Color.accentColor)
             .padding(.top, 2)
+            if model.failedFile == nil && model.watchedFolder == nil {
+                Button("Choose Watched Folder…") { model.presentFolderPicker() }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
         }
     }
 
@@ -240,12 +291,18 @@ struct MenuBarView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 2)
-            ForEach(model.recent) { result in
-                if result.outputURL == nil {
-                    // Nothing to reveal, and the row should not look disabled.
-                    RecentJobRow(result: result, reveal: nil)
-                } else {
-                    RecentJobRow(result: result) { model.revealInFinder(result) }
+            if model.recent.isEmpty {
+                Text("Completed recordings will appear here.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(model.recent) { result in
+                    if result.outputURL == nil {
+                        // Nothing to reveal, and the row should not look disabled.
+                        RecentJobRow(result: result, reveal: nil)
+                    } else {
+                        RecentJobRow(result: result) { model.revealInFinder(result) }
+                    }
                 }
             }
         }
