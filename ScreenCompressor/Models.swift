@@ -25,6 +25,17 @@ struct CompressionProgress: Sendable, Equatable {
     let fractionCompleted: Double?
     let processedDuration: Double?
     let speed: Double?
+    let sourceSize: Int64?
+    let currentOutputSize: Int64?
+
+    init(fractionCompleted: Double?, processedDuration: Double?, speed: Double?,
+         sourceSize: Int64? = nil, currentOutputSize: Int64? = nil) {
+        self.fractionCompleted = fractionCompleted
+        self.processedDuration = processedDuration
+        self.speed = speed
+        self.sourceSize = sourceSize
+        self.currentOutputSize = currentOutputSize
+    }
 }
 
 struct CompressionResult: Sendable, Identifiable {

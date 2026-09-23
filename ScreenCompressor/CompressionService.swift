@@ -18,6 +18,7 @@ struct CompressionService: Sendable {
         let sourceSize = try fileSize(source)
         let originalIdentity = try SourceIdentity(url: source)
         let duration = await mediaDuration(source)
+        let progressState = FFmpegProgressAccumulator(totalDuration: duration, sourceSize: sourceSize)
         let directory = source.deletingLastPathComponent()
         let partial = directory.appendingPathComponent(".\(UUID().uuidString).processing.mp4")
         let descriptor = open(partial.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
@@ -27,22 +28,17 @@ struct CompressionService: Sendable {
         var finalized: URL?
         do {
             await logger.log("Compression started: \(source.path)")
+            await onProgress(CompressionProgress(fractionCompleted: nil, processedDuration: nil,
+                                                 speed: nil, sourceSize: sourceSize, currentOutputSize: 0))
             let result = try await runner.run(
                 executable: ffmpeg,
                 arguments: tools.arguments(source: source, destination: partial)
             ) { line in
                 guard let parsed = parser.parse(line) else { return }
-                let fraction = duration.flatMap { total -> Double? in
-                    guard total > 0, let processed = parsed.outputTime else { return nil }
-                    return min(1, max(0, processed / total))
-                }
-                if parsed.outputTime != nil || parsed.isComplete {
-                    await onProgress(CompressionProgress(
-                        fractionCompleted: parsed.isComplete ? (duration == nil ? nil : 1) : fraction,
-                        processedDuration: parsed.outputTime,
-                        speed: parsed.speed
-                    ))
-                }
+                guard parsed.outputTime != nil || parsed.speed != nil || parsed.isComplete else { return }
+                let currentSize = try? fileSize(partial)
+                let progress = await progressState.update(parsed, currentOutputSize: currentSize)
+                await onProgress(progress)
             }
             guard result.status == 0 else {
                 await logger.log("ffmpeg failed (\(result.status)): \(result.stderr)")

@@ -32,6 +32,35 @@ final class UtilitiesTests: XCTestCase {
         XCTAssertNil(parser.parse("unknown=value"))
     }
 
+    func testProgressAccumulatorKeepsLatestTimeSpeedAndSizes() async throws {
+        let parser = FFmpegProgressParser()
+        let accumulator = FFmpegProgressAccumulator(totalDuration: 10, sourceSize: 1_000)
+        let time = try XCTUnwrap(parser.parse("out_time_us=5000000"))
+        let first = await accumulator.update(time, currentOutputSize: 200)
+        XCTAssertEqual(first.fractionCompleted, 0.5)
+        XCTAssertEqual(first.sourceSize, 1_000)
+        XCTAssertEqual(first.currentOutputSize, 200)
+        XCTAssertNil(first.speed)
+
+        let speed = try XCTUnwrap(parser.parse("speed=2.5x"))
+        let second = await accumulator.update(speed, currentOutputSize: 300)
+        XCTAssertEqual(second.fractionCompleted, 0.5)
+        XCTAssertEqual(second.speed, 2.5)
+        XCTAssertEqual(second.currentOutputSize, 300)
+
+        let completion = try XCTUnwrap(parser.parse("progress=end"))
+        let final = await accumulator.update(completion, currentOutputSize: 400)
+        XCTAssertEqual(final.fractionCompleted, 1)
+        XCTAssertEqual(final.speed, 2.5)
+    }
+
+    func testProgressWithoutDurationStaysIndeterminate() async throws {
+        let accumulator = FFmpegProgressAccumulator(totalDuration: nil, sourceSize: 1_000)
+        let completion = try XCTUnwrap(FFmpegProgressParser().parse("progress=end"))
+        let progress = await accumulator.update(completion, currentOutputSize: 300)
+        XCTAssertNil(progress.fractionCompleted)
+    }
+
     func testRatio() {
         XCTAssertEqual(CompressionRatio.savedPercentage(source: 100, output: 25), 75)
         XCTAssertNil(CompressionRatio.savedPercentage(source: 0, output: 1))
@@ -233,6 +262,14 @@ final class ProcessAndStabilizationTests: XCTestCase {
     }
 }
 
+private actor ProgressSamples {
+    private(set) var values: [CompressionProgress] = []
+
+    func append(_ progress: CompressionProgress) {
+        values.append(progress)
+    }
+}
+
 final class RealPipelineTests: XCTestCase {
     func testHEVCConversionInTemporaryDirectory() async throws {
         guard ProcessInfo.processInfo.environment["SCREEN_COMPRESSOR_INTEGRATION_TESTS"] == "1" else {
@@ -258,11 +295,16 @@ final class RealPipelineTests: XCTestCase {
         let app = AppConfiguration(watchDirectory: directory, logDirectory: directory.appendingPathComponent("logs"))
         let service = CompressionService(tools: tools, runner: ProcessRunner(),
                                          logger: LoggingService(configuration: app), cleanup: cleanup)
-        let result = try await service.compress(source: source) { _ in }
+        let samples = ProgressSamples()
+        let result = try await service.compress(source: source) { await samples.append($0) }
+        let progress = await samples.values
         XCTAssertTrue(FileManager.default.fileExists(atPath: result.outputURL?.path ?? ""))
         XCTAssertTrue(FileManager.default.fileExists(atPath: fakeTrash.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
         XCTAssertGreaterThan(result.outputSize ?? 0, 0)
+        XCTAssertTrue(progress.contains { ($0.sourceSize ?? 0) > 0 })
+        XCTAssertTrue(progress.contains { ($0.currentOutputSize ?? 0) > 0 })
+        XCTAssertTrue(progress.contains { $0.fractionCompleted == 1 })
     }
 }
 

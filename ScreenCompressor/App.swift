@@ -35,8 +35,10 @@ final class MenuBarViewModel: ObservableObject {
     @Published private(set) var state = "Idle"
     @Published private(set) var currentFile: URL?
     @Published private(set) var progress: CompressionProgress?
+    @Published private(set) var processingStartedAt: Date?
     @Published private(set) var recent: [CompressionResult] = []
     @Published private(set) var errorMessage: String?
+    @Published private(set) var failedFile: URL?
     @Published private(set) var queuedCount = 0
     @Published private(set) var launchAtLoginEnabled = false
 
@@ -49,6 +51,11 @@ final class MenuBarViewModel: ObservableObject {
     var menuSymbol: String {
         if errorMessage != nil { return "exclamationmark.circle" }
         return state == "Compressing" ? "arrow.down.circle.fill" : "arrow.down.circle"
+    }
+
+    var waitingCount: Int {
+        let active = currentFile == nil ? 0 : 1
+        return max(0, queuedCount - active)
     }
 
     func start() async {
@@ -93,13 +100,19 @@ final class MenuBarViewModel: ObservableObject {
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
+        let hadLoginError = errorMessage == "Launch at Login could not be changed."
         do {
             try login.setEnabled(enabled)
             launchAtLoginEnabled = login.isEnabled
-            errorMessage = nil
+            if hadLoginError {
+                errorMessage = nil
+                if currentFile == nil { state = "Idle" }
+            }
         } catch {
             launchAtLoginEnabled = login.isEnabled
+            failedFile = nil
             errorMessage = "Launch at Login could not be changed."
+            if currentFile == nil { state = "Error" }
             Task { await LoggingService(configuration: configuration).log("Launch at Login failed: \(error)") }
         }
     }
@@ -112,80 +125,26 @@ final class MenuBarViewModel: ObservableObject {
         switch event {
         case .queued(_, let count): queuedCount = count
         case .stabilizing(let file):
-            state = "Preparing"; currentFile = file; progress = nil; errorMessage = nil
+            state = "Preparing"; currentFile = file; progress = nil
+            processingStartedAt = nil; failedFile = nil; errorMessage = nil
         case .processing(let file, let value):
+            if state != "Compressing" || currentFile != file { processingStartedAt = Date() }
             state = "Compressing"; currentFile = file; progress = value; errorMessage = nil
         case .completed(let result):
             recent.insert(result, at: 0)
             recent = Array(recent.prefix(configuration.recentJobLimit))
-            currentFile = nil; progress = nil; state = "Idle"; queuedCount = max(0, queuedCount - 1)
+            currentFile = nil; progress = nil; processingStartedAt = nil
+            failedFile = nil; state = "Idle"; queuedCount = max(0, queuedCount - 1)
         case .failed(let result):
             recent.insert(result, at: 0)
             recent = Array(recent.prefix(configuration.recentJobLimit))
             errorMessage = result.failureReason
-            currentFile = nil; progress = nil; state = "Error"; queuedCount = max(0, queuedCount - 1)
+            failedFile = result.sourceURL
+            currentFile = nil; progress = nil; processingStartedAt = nil
+            state = "Error"; queuedCount = max(0, queuedCount - 1)
         case .monitoringError(let message):
-            errorMessage = message; state = "Error"
+            failedFile = nil; errorMessage = message
+            if currentFile == nil { state = "Error" }
         }
-    }
-}
-
-struct MenuBarView: View {
-    @ObservedObject var model: MenuBarViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Screen Compressor", systemImage: model.menuSymbol).font(.headline)
-                Spacer()
-                Text(model.state).foregroundStyle(.secondary)
-            }
-            if let file = model.currentFile {
-                Text(file.lastPathComponent).lineLimit(1).truncationMode(.middle)
-                if let fraction = model.progress?.fractionCompleted {
-                    ProgressView(value: fraction)
-                    Text(fraction.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    ProgressView()
-                    Text(model.state == "Preparing" ? "Waiting for recording to finish" : "Compressing")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            if model.queuedCount > 1 { Text("\(model.queuedCount - 1) queued").font(.caption).foregroundStyle(.secondary) }
-            if let error = model.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-                    .font(.caption).fixedSize(horizontal: false, vertical: true)
-            }
-            if !model.recent.isEmpty {
-                Divider()
-                Text("Recent").font(.caption).foregroundStyle(.secondary)
-                ForEach(model.recent) { result in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label(result.outputURL?.lastPathComponent ?? result.sourceURL.lastPathComponent,
-                              systemImage: result.failureReason == nil ? "checkmark.circle" : "xmark.circle")
-                            .lineLimit(1).truncationMode(.middle)
-                        if let output = result.outputSize {
-                            Text("\(FileSizeFormatter.string(result.sourceSize)) → \(FileSizeFormatter.string(output))")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button("Open Screenshots Folder") { NSWorkspace.shared.open(model.configuration.watchDirectory) }
-            Button("View Logs") {
-                let log = model.configuration.logDirectory.appendingPathComponent("screen-compressor.log")
-                NSWorkspace.shared.open(FileManager.default.fileExists(atPath: log.path) ? log : model.configuration.logDirectory)
-            }
-            Toggle("Launch at Login", isOn: Binding(
-                get: { model.launchAtLoginEnabled },
-                set: { model.setLaunchAtLogin($0) }
-            ))
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-        }
-        .padding(14)
-        .frame(width: 300)
-        .onAppear { model.refreshLaunchAtLogin() }
     }
 }
