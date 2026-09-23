@@ -5,8 +5,17 @@ import SwiftUI
 /// hold a dozen settings comfortably. The preset picker stays in the menu.
 struct AdvancedSettingsView: View {
     @ObservedObject var model: MenuBarViewModel
+    @State private var selectedPreset: CompressionPreset
+    @State private var draft: CompressionConfiguration
 
-    private var configuration: CompressionConfiguration { model.compressionConfiguration }
+    init(model: MenuBarViewModel) {
+        self.model = model
+        let preset = model.compressionConfiguration.preset
+        _selectedPreset = State(initialValue: preset)
+        _draft = State(initialValue: model.configuration(for: preset))
+    }
+
+    private var configuration: CompressionConfiguration { draft }
 
     var body: some View {
         ScrollView {
@@ -27,8 +36,11 @@ struct AdvancedSettingsView: View {
     private var presetSection: some View {
         SettingsSection(title: "Preset", detail: configuration.preset.detail) {
             Picker("Quality", selection: Binding(
-                get: { configuration.preset },
-                set: { model.applyPreset($0) }
+                get: { selectedPreset },
+                set: {
+                    selectedPreset = $0
+                    draft = model.configuration(for: $0)
+                }
             )) {
                 ForEach(CompressionPreset.selectable, id: \.self) { preset in
                     Text(preset.displayName).tag(preset)
@@ -214,12 +226,20 @@ struct AdvancedSettingsView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Settings are saved and apply to recordings that have not started yet. A compression already running keeps the settings it started with.")
+            Text("Changes apply only after Save. A compression already running keeps the settings it started with.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Reset to Balanced") { model.resetConfiguration() }
-                .controlSize(.small)
+            HStack {
+                Button("Reset") {
+                    draft = model.resetConfiguration(for: selectedPreset)
+                }
+                Button("Save") {
+                    model.saveConfiguration(draft, for: selectedPreset)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.small)
         }
     }
 
@@ -228,14 +248,14 @@ struct AdvancedSettingsView: View {
     private func binding<Value>(_ keyPath: WritableKeyPath<CompressionConfiguration, Value>) -> Binding<Value> {
         Binding(
             get: { configuration[keyPath: keyPath] },
-            set: { value in model.updateConfiguration { $0[keyPath: keyPath] = value } }
+            set: { value in draft[keyPath: keyPath] = value }
         )
     }
 
     private var qualityBinding: Binding<Double> {
         Binding(
             get: { Double(configuration.quality) },
-            set: { value in model.updateConfiguration { $0.quality = Int(value.rounded()) } }
+            set: { value in draft.quality = Int(value.rounded()) }
         )
     }
 
@@ -245,11 +265,9 @@ struct AdvancedSettingsView: View {
         Binding(
             get: { configuration.qualityMode },
             set: { mode in
-                model.updateConfiguration { config in
-                    config.qualityMode = mode
-                    if mode == .targetBitrate, config.bitrate.kbps == nil {
-                        config.bitrate = .kbps(CompressionConfiguration.defaultBitrateKbps)
-                    }
+                draft.qualityMode = mode
+                if mode == .targetBitrate, draft.bitrate.kbps == nil {
+                    draft.bitrate = .kbps(CompressionConfiguration.defaultBitrateKbps)
                 }
             }
         )
@@ -260,10 +278,8 @@ struct AdvancedSettingsView: View {
         Binding(
             get: { configuration.bitrate },
             set: { value in
-                model.updateConfiguration { config in
-                    config.bitrate = value
-                    config.qualityMode = value == .automatic ? .constantQuality : .targetBitrate
-                }
+                draft.bitrate = value
+                draft.qualityMode = value == .automatic ? .constantQuality : .targetBitrate
             }
         )
     }
@@ -272,10 +288,8 @@ struct AdvancedSettingsView: View {
         Binding(
             get: { configuration.bitrate.kbps ?? CompressionConfiguration.defaultBitrateKbps },
             set: { value in
-                model.updateConfiguration { config in
-                    config.bitrate = .kbps(value)
-                    config.qualityMode = .targetBitrate
-                }
+                draft.bitrate = .kbps(value)
+                draft.qualityMode = .targetBitrate
             }
         )
     }
@@ -343,7 +357,7 @@ enum AdvancedSettingsWindow {
         let window = NSWindow(contentRect: frame,
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
-        window.title = "Compression"
+        window.title = "Advance Settings"
         window.contentView = hosting
         window.isReleasedWhenClosed = false
         window.center()

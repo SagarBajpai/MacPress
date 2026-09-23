@@ -16,7 +16,7 @@ The app is a menu-bar-only application (`LSUIElement`), with no persistent main 
 
 Balanced is the default. High, Balanced, Medium, and Low are fixed configurations designed for screen recordings; changing an advanced control derives Custom. Returning every control to a preset definition restores that preset label. Settings are persisted as Codable data in `UserDefaults` by `CompressionSettingsStore`.
 
-Advanced settings live in a small native AppKit-hosted SwiftUI window because the menu-bar popover is intentionally compact. Settings changes apply to jobs not yet started; `JobQueue` snapshots settings before each encode.
+Advanced settings live in a small native AppKit-hosted SwiftUI window because the menu-bar popover is intentionally compact. The window is titled “Advance Settings”. Each quality tab has its own editable draft: changes are discarded unless Save is pressed. Reset restores that tab's built-in preset defaults. Saved settings apply to jobs not yet started; `JobQueue` snapshots settings before each encode.
 
 ## Product rules
 

@@ -363,7 +363,11 @@ struct CompressionConfiguration: Codable, Equatable, Sendable {
     }
 
     func applying(_ preset: CompressionPreset) -> CompressionConfiguration {
-        guard let definition = preset.definition else { return normalized() }
+        guard let definition = preset.definition else {
+            var custom = self
+            custom.preset = .custom
+            return custom
+        }
         return definition.normalized()
     }
 

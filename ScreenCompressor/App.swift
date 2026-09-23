@@ -57,6 +57,7 @@ final class MenuBarViewModel: ObservableObject {
     private var started = false
     private var completionFlash: Task<Void, Never>?
     private var renderedIcon: RenderedIcon?
+    private var savedConfigurations: [CompressionPreset: CompressionConfiguration] = [:]
 
     /// What the menu-bar icon is currently showing. The ring reflects overall batch progress.
     private enum RenderedIcon: Equatable {
@@ -87,6 +88,7 @@ final class MenuBarViewModel: ObservableObject {
         launchAtLoginEnabled = login.isEnabled
         let configuration = await settingsStore.configuration
         compressionConfiguration = configuration
+        savedConfigurations = await settingsStore.configurations()
         let logger = LoggingService(configuration: appConfiguration)
         await logger.log("Application startup [settings: \(configuration.summary)]")
         do {
@@ -128,7 +130,35 @@ final class MenuBarViewModel: ObservableObject {
 
     /// Applies a preset to every underlying control.
     func applyPreset(_ preset: CompressionPreset) {
-        store(compressionConfiguration.applying(preset))
+        if preset == .custom {
+            var custom = compressionConfiguration
+            custom.preset = .custom
+            compressionConfiguration = custom
+            savedConfigurations[.custom] = custom
+            Task { await settingsStore.update(custom, for: .custom) }
+            return
+        }
+        let configuration = savedConfigurations[preset] ?? compressionConfiguration.applying(preset)
+        store(configuration)
+    }
+
+    func configuration(for preset: CompressionPreset) -> CompressionConfiguration {
+        savedConfigurations[preset] ?? (preset.definition ?? compressionConfiguration)
+    }
+
+    func saveConfiguration(_ configuration: CompressionConfiguration, for preset: CompressionPreset) {
+        let normalized = configuration.normalized()
+        savedConfigurations[preset] = normalized
+        compressionConfiguration = normalized
+        Task { await settingsStore.update(normalized, for: preset) }
+    }
+
+    func resetConfiguration(for preset: CompressionPreset) -> CompressionConfiguration {
+        let reset = preset.definition ?? .balanced
+        savedConfigurations[preset] = reset
+        if compressionConfiguration.preset == preset { compressionConfiguration = reset }
+        Task { await settingsStore.reset(preset) }
+        return reset
     }
 
     /// Applies a manual edit. Settings that no longer match a preset become Custom, and
@@ -143,6 +173,7 @@ final class MenuBarViewModel: ObservableObject {
         let normalized = configuration.normalized()
         guard normalized != compressionConfiguration else { return }
         compressionConfiguration = normalized
+        savedConfigurations[normalized.preset] = normalized
         Task { await settingsStore.update(normalized) }
     }
 

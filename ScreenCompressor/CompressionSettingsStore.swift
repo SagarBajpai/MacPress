@@ -21,6 +21,7 @@ actor CompressionSettingsStore {
     }
 
     static let defaultKey = "compression.configuration"
+    private static let configurationsKey = "compression.configurations"
 
     func update(_ configuration: CompressionConfiguration) {
         let normalized = configuration.normalized()
@@ -31,6 +32,31 @@ actor CompressionSettingsStore {
 
     func resetToDefault() {
         update(.balanced)
+    }
+
+    func configurations() -> [CompressionPreset: CompressionConfiguration] {
+        guard let data = defaults.storage.data(forKey: Self.configurationsKey),
+              let stored = try? JSONDecoder().decode([String: CompressionConfiguration].self, from: data) else {
+            return [:]
+        }
+        return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
+            guard let preset = CompressionPreset(rawValue: key) else { return nil }
+            return (preset, value.normalized())
+        })
+    }
+
+    func update(_ configuration: CompressionConfiguration, for preset: CompressionPreset) {
+        var stored = configurations()
+        stored[preset] = configuration.normalized()
+        let encoded = Dictionary(uniqueKeysWithValues: stored.map { ($0.key.rawValue, $0.value) })
+        guard let data = try? JSONEncoder().encode(encoded) else { return }
+        defaults.storage.set(data, forKey: Self.configurationsKey)
+        update(configuration)
+    }
+
+    func reset(_ preset: CompressionPreset) {
+        let definition = preset.definition ?? .balanced
+        update(definition, for: preset)
     }
 
     private static func read(from defaults: UserDefaults, key: String) -> CompressionConfiguration {

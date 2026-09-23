@@ -90,7 +90,9 @@ final class CompressionPresetTests: XCTestCase {
 
     func testCustomPresetHasNoDefinition() {
         XCTAssertNil(CompressionPreset.custom.definition)
-        XCTAssertEqual(CompressionConfiguration.balanced.applying(.custom), .balanced)
+        var configuration = CompressionConfiguration.balanced
+        configuration.preset = .custom
+        XCTAssertEqual(CompressionConfiguration.balanced.applying(.custom), configuration)
     }
 
     func testIncompatibleOptionsAreRepaired() {
@@ -164,6 +166,22 @@ final class CompressionSettingsStoreTests: XCTestCase {
     func testMissingStoredDataFallsBackToBalanced() async {
         let value = await stored(CompressionSettingsStore(defaults: ConfigurationDefaults(storage: testDefaults())))
         XCTAssertEqual(value, .balanced)
+    }
+
+    func testPresetConfigurationsSaveAndResetIndependently() async throws {
+        let defaults = ConfigurationDefaults(storage: testDefaults())
+        let store = CompressionSettingsStore(defaults: defaults)
+        var low = CompressionConfiguration.low
+        low.quality = 12
+        await store.update(low, for: .low)
+
+        let saved = await store.configurations()
+        XCTAssertEqual(saved[.low]?.quality, 12)
+        XCTAssertNil(saved[.high])
+
+        await store.reset(.low)
+        let reset = await store.configurations()
+        XCTAssertEqual(reset[.low], .low)
     }
 }
 

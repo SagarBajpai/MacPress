@@ -35,7 +35,7 @@ struct MenuBarView: View {
                 NSWorkspace.shared.open(model.appConfiguration.watchDirectory)
             }
             MenuActionRow(title: "View Logs", symbol: "doc.text") { openLogs() }
-            MenuActionRow(title: "Advanced Compression…", symbol: "slider.horizontal.3") {
+            MenuActionRow(title: "Advance Settings…", symbol: "slider.horizontal.3") {
                 model.openAdvancedSettings()
             }
 

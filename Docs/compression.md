@@ -4,6 +4,8 @@
 
 `CompressionConfiguration` is Codable, Equatable, Sendable, and contains all encoder choices. Its related enums cover codec, quality mode, bitrate, bitrate ceiling, frame rate, resolution, pixel format, profile, keyframe interval, audio, and scaling quality.
 
+The settings store persists the active configuration plus independent saved configurations for each quality tab. The Advanced Settings window edits a draft and only writes that tab when Save is pressed; Reset replaces that tab with its code-defined preset definition.
+
 `CompressionPreset` definitions are in `ScreenCompressor/CompressionSettings.swift`. `normalized()` repairs incompatible combinations and derives the preset label. `coerced()` is used at the encode boundary so malformed or stale persisted data cannot produce an invalid invocation.
 
 ## Preset intent
