@@ -1,6 +1,6 @@
 # Screen Compressor architecture
 
-Screen Compressor is a SwiftUI `MenuBarExtra` application for macOS 14+ on Apple Silicon. It watches `~/Screenshots` for completed `.mov` screen recordings, compresses one recording at a time with bundled Apple VideoToolbox FFmpeg tools, verifies the result, and moves the original to Trash only after verification succeeds.
+MacPress is a SwiftUI `MenuBarExtra` application for macOS 14+ on Apple Silicon. It watches a user-configured folder for completed `.mov` screen recordings, compresses one recording at a time with bundled Apple VideoToolbox FFmpeg tools, verifies the result, and moves the original to Trash only after verification succeeds.
 
 This is the high-level map. Use [Docs/README.md](Docs/README.md) to choose detailed documentation before changing code.
 
@@ -39,13 +39,15 @@ The app has no server, database, network API, authentication, authorization, ana
 
 ## Lifecycle and processing
 
-`ScreenCompressorApp` delegates launch and termination to `AppDelegate`. `MenuBarViewModel.start()` loads persisted settings, creates `~/Screenshots` if needed, creates the queue, starts the watcher, and performs an initial scan. Termination stops the watcher and shuts down the queue.
+`MacPress` delegates launch and termination to `AppDelegate`. `MenuBarViewModel.start()` loads persisted settings and the explicit watched-folder bookmark. If no valid folder is stored, it makes a best-effort read of Screenshot.app's observed `com.apple.screencapture` `location` preference; if that is unavailable, the user chooses a folder. The queue and native watcher are then created for that folder and an initial scan runs. Changing folders is disabled during active stabilization/encoding, then stops the old watcher and queue before starting replacements. Termination stops the watcher and shuts down the queue.
 
 The queue scans visible regular `.mov` files, canonicalizes and deduplicates them, waits for stable size, snapshots settings, probes the source, and runs FFmpeg to a unique hidden `.processing.mp4` path. The output must be non-empty and, when FFprobe is available, readable media with a positive duration and requested codec. Finalization never overwrites an existing file. Only then is the source moved to Trash.
 
 `MenuBarViewModel` is `@MainActor`; `JobQueue` and `CompressionSettingsStore` are actors. FFmpeg, FFprobe, stabilization waits, and process output are asynchronous.
 
 The critical invariant is: a failed, cancelled, unverified, or cleanup-interrupted compression preserves the original source recording.
+
+The watched-folder model detects eligible files in the selected directory; filesystem events do not prove that Screenshot.app created a file. The Screenshot preference is undocumented and is only an optional startup hint. Clipboard or other non-file Screenshot destinations cannot be watched.
 
 ## Distribution constraints
 

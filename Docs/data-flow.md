@@ -19,7 +19,7 @@ filesystem event
   → CompressionResult / MenuBarViewModel
 ```
 
-`FolderWatcher` uses a native `DispatchSource` vnode watcher and debounce. It requests a scan rather than passing an assumed file directly to the encoder. Startup also scans the directory, so files created before launch are eligible.
+`FolderWatcher` uses a native `DispatchSource` vnode watcher and debounce for the user-selected watched folder. It requests a scan rather than passing an assumed file directly to the encoder. Startup also scans the directory, so files created before launch are eligible. A folder change stops the old watcher and queue before creating replacements. Events identify filesystem changes, not Screenshot.app provenance.
 
 `JobQueue` is an actor. `seen` prevents duplicate filesystem events in one session; `pending` preserves serial work. The worker drains one file at a time. `BatchProgressTracker` keeps the batch denominator stable, counts failures as completed slots, and reports progress back to the main-actor view model.
 

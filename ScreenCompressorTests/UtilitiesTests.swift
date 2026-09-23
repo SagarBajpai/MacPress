@@ -268,6 +268,31 @@ final class CompressionSafetyTests: XCTestCase {
     }
 }
 
+final class WatchedFolderStoreTests: XCTestCase {
+    func testExplicitFolderSelectionPersistsAndReloads() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let suite = "WatchedFolderStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WatchedFolderStore(defaults: defaults)
+        store.save(directory)
+
+        XCTAssertEqual(store.load()?.standardizedFileURL, directory.standardizedFileURL)
+    }
+
+    func testInvalidPersistedFolderIsIgnored() throws {
+        let suite = "WatchedFolderStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("/path/that/does/not/exist", forKey: "watched.folder.path")
+
+        XCTAssertNil(WatchedFolderStore(defaults: defaults).load())
+    }
+}
+
 final class ProcessAndStabilizationTests: XCTestCase {
     func testProcessRunnerStreamsAndExits() async throws {
         let output = try await ProcessRunner().run(

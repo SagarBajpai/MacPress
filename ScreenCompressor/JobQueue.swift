@@ -46,7 +46,7 @@ actor JobQueue {
             }
         } catch {
             await logger.log("Directory scan failed: \(error)")
-            await onEvent(.monitoringError("The Screenshots folder could not be scanned."))
+            await onEvent(.monitoringError("The watched folder could not be scanned. Choose another folder if it is unavailable."))
         }
     }
 

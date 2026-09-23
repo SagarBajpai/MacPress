@@ -1,16 +1,16 @@
 # Product behaviour
 
-Screen Compressor is a menu-bar utility for people who record their Mac screen and want smaller, shareable files without manually operating FFmpeg. It watches the standard `~/Screenshots` folder and processes `.mov` recordings automatically.
+MacPress is a menu-bar utility for people who record their Mac screen and want smaller, shareable files without manually operating FFmpeg. It watches a configurable folder and processes eligible `.mov` recordings automatically.
 
 ## User-visible workflow
 
-1. A screen recording appears in `~/Screenshots`.
+1. A screen recording appears in the configured watched folder.
 2. The app waits while macOS finishes writing it.
 3. The menu shows the current file, encoder progress, sizes, elapsed time, speed, and overall batch progress when multiple recordings are waiting.
 4. On success, the output `.mp4` appears in the same directory and the source is moved to Trash.
 5. Recent successful items show the size reduction and can be clicked to reveal the output in Finder. Failed items show the source and concise error; detailed context is in the log.
 
-The app is a menu-bar-only application (`LSUIElement`), with no persistent main window or Dock icon. The menu provides the preset picker, Screenshots folder, logs, advanced settings, Launch at Login, and Quit.
+The app is a menu-bar-only application (`LSUIElement`), with no persistent main window or Dock icon. The menu provides the preset picker, watched-folder selector, logs, advanced settings, Launch at Login, and Quit. The initial folder is restored from a security-scoped bookmark where available; otherwise MacPress may use the observed Screenshot.app location preference as a best-effort hint and otherwise asks the user to choose.
 
 ## Presets and settings
 
@@ -20,7 +20,7 @@ Advanced settings live in a small native AppKit-hosted SwiftUI window because th
 
 ## Product rules
 
-- Only `.mov` files are watched; output `.mp4` files and hidden/temporary files are ignored.
+- Only visible, regular `.mov` files in the watched folder are watched; output `.mp4` files and hidden/temporary files are ignored.
 - One hardware encode runs at a time.
 - The original is never removed merely because FFmpeg returned success; output verification is required.
 - Collision handling generates a new output name instead of overwriting a file.
@@ -29,4 +29,4 @@ Advanced settings live in a small native AppKit-hosted SwiftUI window because th
 
 ## Not implemented
 
-There is no settings database, cloud sync, notifications, custom watched-folder UI, codec software fallback, pause control, or automatic FFmpeg installation. The legacy shell script/LaunchAgent is not migrated or changed automatically.
+There is no settings database, cloud sync, notifications, codec software fallback, pause control, or automatic FFmpeg installation. Filesystem monitoring does not provide guaranteed Screenshot.app provenance. The legacy shell script/LaunchAgent is not migrated or changed automatically.

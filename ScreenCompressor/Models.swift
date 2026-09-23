@@ -11,9 +11,61 @@ struct AppConfiguration: Sendable {
     let stabilization = StabilizationConfiguration()
 
     static let live = AppConfiguration(
-        watchDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Screenshots"),
+        watchDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop"),
         logDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/ScreenCompressor")
     )
+}
+
+/// Persists a user-selected folder as a security-scoped bookmark when possible.
+/// The raw path is retained as a best-effort fallback for this unsandboxed build.
+struct WatchedFolderStore: @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let pathKey = "watched.folder.path"
+    private let bookmarkKey = "watched.folder.bookmark"
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> URL? {
+        var isStale = false
+        if let data = defaults.data(forKey: bookmarkKey),
+           let url = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil,
+                              bookmarkDataIsStale: &isStale),
+           !isStale, isValidDirectory(url) {
+            _ = url.startAccessingSecurityScopedResource()
+            return url
+        }
+        guard let path = defaults.string(forKey: pathKey) else { return nil }
+        let url = URL(fileURLWithPath: path)
+        return isValidDirectory(url) ? url : nil
+    }
+
+    func save(_ url: URL) {
+        defaults.set(url.path, forKey: pathKey)
+        if let data = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil,
+                                            relativeTo: nil) {
+            defaults.set(data, forKey: bookmarkKey)
+        }
+    }
+
+    private func isValidDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+}
+
+/// Best-effort reader for Screenshot.app's observed, undocumented save-location preference.
+enum ScreenshotLocationResolver {
+    static func hintedDirectory() -> URL? {
+        guard let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") else {
+            return nil
+        }
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return nil
+        }
+        return url
+    }
 }
 
 /// Screen recordings can appear in the watched folder before macOS has finished writing

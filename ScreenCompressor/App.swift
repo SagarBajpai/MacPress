@@ -48,10 +48,12 @@ final class MenuBarViewModel: ObservableObject {
     @Published private(set) var compressionConfiguration = CompressionConfiguration.balanced
     @Published private(set) var isShowingCompletion = false
     @Published private(set) var menuBarImage = MenuBarIcon.idle
+    @Published private(set) var watchedFolder: URL?
 
     let appConfiguration = AppConfiguration.live
     private let login = LaunchAtLoginService()
     private let settingsStore = CompressionSettingsStore()
+    private let watchedFolderStore = WatchedFolderStore()
     private var watcher: FolderWatcher?
     private var queue: JobQueue?
     private var started = false
@@ -69,6 +71,7 @@ final class MenuBarViewModel: ObservableObject {
 
     /// True when more than one recording is being worked through.
     var isBatchActive: Bool { batch.totalJobs > 1 }
+    var isCompressing: Bool { state == "Preparing" || state == "Compressing" }
 
     var batchPositionLabel: String? {
         guard isBatchActive, let number = batch.currentJobNumber else { return nil }
@@ -89,30 +92,83 @@ final class MenuBarViewModel: ObservableObject {
         let configuration = await settingsStore.configuration
         compressionConfiguration = configuration
         savedConfigurations = await settingsStore.configurations()
+        watchedFolder = watchedFolderStore.load() ?? ScreenshotLocationResolver.hintedDirectory()
+        guard let directory = watchedFolder else {
+            presentFolderPicker()
+            return
+        }
+        await startWatching(directory)
+    }
+
+    private func startWatching(_ directory: URL) async {
         let logger = LoggingService(configuration: appConfiguration)
-        await logger.log("Application startup [settings: \(configuration.summary)]")
+        await logger.log("Watcher setup [folder: \(directory.path)]")
         do {
-            try FileManager.default.createDirectory(at: appConfiguration.watchDirectory, withIntermediateDirectories: true)
+            try validate(directory)
             let compressor = CompressionService(tools: FFmpegService(), runner: ProcessRunner(), logger: logger)
-            let queue = JobQueue(directory: appConfiguration.watchDirectory,
+            let queue = JobQueue(directory: directory,
                                  stabilization: FileStabilizationService(configuration: appConfiguration.stabilization),
                                  compressor: compressor, settings: settingsStore, logger: logger) { [weak self] event in
                 await self?.receive(event)
             }
             self.queue = queue
             let watcher = FolderWatcher()
-            try watcher.start(directory: appConfiguration.watchDirectory,
+            try watcher.start(directory: directory,
                               debounce: appConfiguration.watcherDebounce) { [weak queue] in
                 guard let queue else { return }
                 Task { await queue.scan() }
             }
             self.watcher = watcher
-            await logger.log("Watcher started: \(appConfiguration.watchDirectory.path)")
+            await logger.log("Watcher started: \(directory.path)")
             await queue.scan()
         } catch {
             state = "Error"
-            errorMessage = "The Screenshots folder could not be watched."
+            watchedFolder = nil
+            errorMessage = "The watched folder could not be opened. Choose another folder."
             await logger.log("Startup failed: \(error)")
+        }
+    }
+
+    private func validate(_ directory: URL) throws {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        guard FileManager.default.isReadableFile(atPath: directory.path) else {
+            throw CocoaError(.fileReadNoPermission)
+        }
+    }
+
+    func presentFolderPicker() {
+        guard !isCompressing else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Watch Folder"
+        panel.message = "Choose the folder where MacPress should watch for screen recordings."
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor [weak self] in
+                await self?.changeWatchedFolder(to: url)
+            }
+        }
+    }
+
+    func changeWatchedFolder(to directory: URL) async {
+        guard !isCompressing else { return }
+        do {
+            try validate(directory)
+            watcher?.stop()
+            watcher = nil
+            await queue?.shutdown()
+            queue = nil
+            watchedFolderStore.save(directory)
+            watchedFolder = directory
+            await startWatching(directory)
+        } catch {
+            errorMessage = "That folder is unavailable or cannot be read. Choose another folder."
+            state = "Error"
         }
     }
 

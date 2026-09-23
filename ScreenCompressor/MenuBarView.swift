@@ -7,13 +7,19 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Screen Compressor").font(.headline)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("MacPress").font(.headline)
+                    Text("Automatically compresses your Mac screen recordings.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text(model.state).font(.caption).foregroundStyle(.secondary)
             }
             .padding(.bottom, 8)
 
             presetPicker
+
+            watchedFolderSection
 
             if let file = model.currentFile {
                 Divider()
@@ -31,8 +37,8 @@ struct MenuBarView: View {
             }
 
             Divider().padding(.bottom, 6)
-            MenuActionRow(title: "Open Screenshots Folder", symbol: "folder") {
-                NSWorkspace.shared.open(model.appConfiguration.watchDirectory)
+            MenuActionRow(title: "Open Watched Folder", symbol: "folder") {
+                if let folder = model.watchedFolder { NSWorkspace.shared.open(folder) }
             }
             MenuActionRow(title: "View Logs", symbol: "doc.text") { openLogs() }
             MenuActionRow(title: "Advance Settings…", symbol: "slider.horizontal.3") {
@@ -78,7 +84,32 @@ struct MenuBarView: View {
             .controlSize(.small)
             .frame(width: 132)
             .help(model.compressionConfiguration.preset.detail)
+            .disabled(model.isCompressing)
+            .help(model.isCompressing ? "Quality can't be changed while compressing." : model.compressionConfiguration.preset.detail)
         }
+    }
+
+    private var watchedFolderSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Text("Watched Folder").font(.caption).foregroundStyle(.secondary)
+                Image(systemName: "info.circle").font(.caption).foregroundStyle(.secondary)
+                    .help("MacPress watches this folder for new .mov recordings and saves the compressed video in the same folder.")
+                Spacer()
+                Button("Change…") { model.presentFolderPicker() }
+                    .buttonStyle(.link).font(.caption)
+                    .disabled(model.isCompressing)
+                    .help(model.isCompressing ? "Folder changes are unavailable while compressing." : "Choose a different folder")
+            }
+            if let folder = model.watchedFolder {
+                Text(folder.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
+                    .font(.caption).lineLimit(1).truncationMode(.middle)
+                    .help(folder.path)
+            } else {
+                Text("No folder selected").font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding(.top, 8)
     }
 
     @ViewBuilder
