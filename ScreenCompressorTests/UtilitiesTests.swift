@@ -3,6 +3,22 @@ import XCTest
 @testable import ScreenCompressor
 
 final class UtilitiesTests: XCTestCase {
+    func testBundledToolsTakePriorityOverInstalledTools() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let bundle = directory.appendingPathComponent("Test.app")
+        let bin = bundle.appendingPathComponent("Contents/Resources/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for name in ["ffmpeg", "ffprobe"] {
+            let executable = bin.appendingPathComponent(name)
+            try Data("#!/bin/sh\nexit 0\n".utf8).write(to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        }
+        let service = FFmpegService(configuration: CompressionConfiguration(), bundleURL: bundle)
+        XCTAssertEqual(service.executable(named: "ffmpeg"), bin.appendingPathComponent("ffmpeg"))
+        XCTAssertEqual(service.executable(named: "ffprobe"), bin.appendingPathComponent("ffprobe"))
+    }
+
     func testFilenameCollisionsAndExtension() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -275,9 +291,14 @@ final class RealPipelineTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["SCREEN_COMPRESSOR_INTEGRATION_TESTS"] == "1" else {
             throw XCTSkip("Set SCREEN_COMPRESSOR_INTEGRATION_TESTS=1 to run the hardware encoder test")
         }
-        let tools = FFmpegService(configuration: CompressionConfiguration())
+        let bundlePath = ProcessInfo.processInfo.environment["SCREEN_COMPRESSOR_TEST_APP"]
+        let bundleURL = bundlePath.map { URL(fileURLWithPath: $0) } ?? Bundle.main.bundleURL
+        let tools = FFmpegService(configuration: CompressionConfiguration(), bundleURL: bundleURL)
         guard let ffmpeg = tools.executable(named: "ffmpeg"), tools.executable(named: "ffprobe") != nil else {
             throw XCTSkip("ffmpeg and ffprobe are required for the integration test")
+        }
+        if bundlePath != nil {
+            XCTAssertEqual(ffmpeg, bundleURL.appendingPathComponent("Contents/Resources/bin/ffmpeg"))
         }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -286,7 +307,7 @@ final class RealPipelineTests: XCTestCase {
         let fixture = try await ProcessRunner().run(
             executable: ffmpeg,
             arguments: ["-y", "-f", "lavfi", "-i", "testsrc2=size=128x128:rate=10",
-                        "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", source.path],
+                        "-t", "1", "-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p", source.path],
             onStdoutLine: { _ in }
         )
         XCTAssertEqual(fixture.status, 0, fixture.stderr)

@@ -30,9 +30,13 @@ struct FileStabilizationService: Sendable {
 struct FFmpegService: Sendable {
     let configuration: CompressionConfiguration
     var executables: [String: URL]? = nil
+    var bundleURL: URL = Bundle.main.bundleURL
 
     func executable(named name: String) -> URL? {
         if let executables { return executables[name] }
+        let bundled = bundleURL.appendingPathComponent("Contents/Resources/bin", isDirectory: true)
+            .appendingPathComponent(name)
+        if FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled }
         let defaults = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
         let pathDirectories = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
         for directory in defaults + pathDirectories {
