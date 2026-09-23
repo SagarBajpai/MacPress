@@ -8,16 +8,22 @@ struct CompressionService: Sendable {
     var cleanup = FileCleanupService()
     let filenames = FileNameGenerator()
     let parser = FFmpegProgressParser()
+    let argumentBuilder = FFmpegArgumentBuilder()
 
+    /// - Parameter configuration: the settings snapshot taken when the job started. Editing
+    ///   compression settings never mutates an encode that is already running.
     func compress(
         source: URL,
+        configuration: CompressionConfiguration,
         onProgress: @escaping @Sendable (CompressionProgress) async -> Void
     ) async throws -> CompressionResult {
         guard let ffmpeg = tools.executable(named: "ffmpeg") else { throw CompressionError.ffmpegNotFound }
         guard FileManager.default.fileExists(atPath: source.path) else { throw CompressionError.sourceMissing }
+        let configuration = configuration.coerced()
         let sourceSize = try fileSize(source)
         let originalIdentity = try SourceIdentity(url: source)
-        let duration = await mediaDuration(source)
+        let sourceMedia = await probe(source)
+        let duration = sourceMedia?.info.duration
         let progressState = FFmpegProgressAccumulator(totalDuration: duration, sourceSize: sourceSize)
         let directory = source.deletingLastPathComponent()
         let partial = directory.appendingPathComponent(".\(UUID().uuidString).processing.mp4")
@@ -27,12 +33,17 @@ struct CompressionService: Sendable {
 
         var finalized: URL?
         do {
-            await logger.log("Compression started: \(source.path)")
+            await logger.log("Compression started: \(source.path) [\(configuration.summary)]")
             await onProgress(CompressionProgress(fractionCompleted: nil, processedDuration: nil,
                                                  speed: nil, sourceSize: sourceSize, currentOutputSize: 0))
             let result = try await runner.run(
                 executable: ffmpeg,
-                arguments: tools.arguments(source: source, destination: partial)
+                arguments: argumentBuilder.arguments(
+                    configuration: configuration,
+                    source: source,
+                    sourceInfo: sourceMedia?.info ?? .unknown,
+                    destination: partial
+                )
             ) { line in
                 guard let parsed = parser.parse(line) else { return }
                 guard parsed.outputTime != nil || parsed.speed != nil || parsed.isComplete else { return }
@@ -46,9 +57,10 @@ struct CompressionService: Sendable {
             }
             let outputSize = try fileSize(partial)
             guard outputSize > 0 else { throw CompressionError.invalidOutput }
-            if let ffprobe = tools.executable(named: "ffprobe") {
-                guard let outputDuration = await mediaDuration(partial), outputDuration > 0,
-                      await hasHEVCVideo(partial, ffprobe: ffprobe) else {
+            if tools.executable(named: "ffprobe") != nil {
+                guard let output = await probe(partial),
+                      let outputDuration = output.info.duration, outputDuration > 0,
+                      output.videoCodecName == configuration.codec.probeCodecName else {
                     throw CompressionError.invalidOutput
                 }
             }
@@ -89,19 +101,15 @@ struct CompressionService: Sendable {
         return (attributes?[.creationDate] as? Date) ?? Date()
     }
 
-    private func mediaDuration(_ url: URL) async -> Double? {
+    private func probe(_ url: URL) async -> ProbedMedia? {
         guard let ffprobe = tools.executable(named: "ffprobe") else { return nil }
-        let args = ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", url.path]
-        guard let result = try? await runner.run(executable: ffprobe, arguments: args, onStdoutLine: { _ in }), result.status == 0 else { return nil }
-        return Double(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    private func hasHEVCVideo(_ url: URL, ffprobe: URL) async -> Bool {
-        let args = ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name",
-                    "-of", "default=noprint_wrappers=1:nokey=1", url.path]
+        let args = ["-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate",
+                    "-show_entries", "format=duration,bit_rate",
+                    "-of", "json", url.path]
         guard let result = try? await runner.run(executable: ffprobe, arguments: args, onStdoutLine: { _ in }),
-              result.status == 0 else { return false }
-        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "hevc"
+              result.status == 0 else { return nil }
+        return MediaProbe.parse(Data(result.stdout.utf8))
     }
 
     private func finalize(_ partial: URL, in directory: URL, date: Date) throws -> URL {

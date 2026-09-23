@@ -1,7 +1,7 @@
 import Foundation
 
 struct FileStabilizationService: Sendable {
-    let configuration: CompressionConfiguration
+    let configuration: StabilizationConfiguration
     var size: @Sendable (URL) throws -> Int64 = { url in
         guard let value = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
             throw CompressionError.sourceMissing
@@ -12,23 +12,23 @@ struct FileStabilizationService: Sendable {
 
     func waitUntilStable(_ url: URL) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: configuration.stabilizationTimeout)
+        let deadline = clock.now.advanced(by: configuration.timeout)
         var previous: Int64?
         var unchanged = 0
         while clock.now < deadline {
             try Task.checkCancellation()
             let current = try size(url)
             if current > 0, current == previous { unchanged += 1 } else { unchanged = 0 }
-            if unchanged >= configuration.stabilizationChecks - 1 { return }
+            if unchanged >= configuration.requiredChecks - 1 { return }
             previous = current
-            try await pause(configuration.stabilizationInterval)
+            try await pause(configuration.interval)
         }
         throw CompressionError.stabilizationTimeout
     }
 }
 
+/// Locates the bundled media tools, falling back to common install locations.
 struct FFmpegService: Sendable {
-    let configuration: CompressionConfiguration
     var executables: [String: URL]? = nil
     var bundleURL: URL = Bundle.main.bundleURL
 
@@ -44,13 +44,6 @@ struct FFmpegService: Sendable {
             if FileManager.default.isExecutableFile(atPath: url.path) { return url }
         }
         return nil
-    }
-
-    func arguments(source: URL, destination: URL) -> [String] {
-        ["-y", "-hwaccel", "videotoolbox", "-i", source.path,
-         "-c:v", "hevc_videotoolbox", "-q:v", "\(configuration.videoQuality)",
-         "-c:a", "aac", "-b:a", configuration.audioBitrate, "-tag:v", "hvc1",
-         "-progress", "pipe:1", "-nostats", destination.path]
     }
 }
 

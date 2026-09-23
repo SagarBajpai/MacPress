@@ -38,7 +38,81 @@ struct FFmpegProgressParser: Sendable {
     }
 }
 
+/// Facts reported by ffprobe about a media file.
+struct ProbedMedia: Equatable, Sendable {
+    var info: VideoSourceInfo
+    var videoCodecName: String?
+}
+
+/// Parses `ffprobe -of json` output. Unknown or malformed fields degrade to `nil` rather
+/// than failing, so a missing bitrate never stops a job.
+struct MediaProbe: Sendable {
+    struct Output: Decodable {
+        struct Stream: Decodable {
+            let codecName: String?
+            let width: Int?
+            let height: Int?
+            let averageFrameRate: String?
+            let rawFrameRate: String?
+            let bitRate: String?
+
+            enum CodingKeys: String, CodingKey {
+                case codecName = "codec_name"
+                case width
+                case height
+                case averageFrameRate = "avg_frame_rate"
+                case rawFrameRate = "r_frame_rate"
+                case bitRate = "bit_rate"
+            }
+        }
+
+        struct Format: Decodable {
+            let duration: String?
+            let bitRate: String?
+
+            enum CodingKeys: String, CodingKey {
+                case duration
+                case bitRate = "bit_rate"
+            }
+        }
+
+        let streams: [Stream]?
+        let format: Format?
+    }
+
+    static func parse(_ data: Data) -> ProbedMedia? {
+        guard let output = try? JSONDecoder().decode(Output.self, from: data) else { return nil }
+        guard let stream = output.streams?.first else {
+            return ProbedMedia(info: VideoSourceInfo(duration: output.format?.duration.flatMap(Double.init)), videoCodecName: nil)
+        }
+        return ProbedMedia(
+            info: VideoSourceInfo(
+                duration: output.format?.duration.flatMap(Double.init),
+                width: stream.width,
+                height: stream.height,
+                frameRate: frameRate(stream.averageFrameRate) ?? frameRate(stream.rawFrameRate),
+                bitRate: stream.bitRate.flatMap(Double.init) ?? output.format?.bitRate.flatMap(Double.init)
+            ),
+            videoCodecName: stream.codecName
+        )
+    }
+
+    /// ffprobe reports frame rates as rationals such as `79940/1343`. `0/0` means unknown.
+    static func frameRate(_ value: String?) -> Double? {
+        guard let value else { return nil }
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        if parts.count == 1 { return Double(parts[0]).flatMap { $0 > 0 ? $0 : nil } }
+        guard parts.count == 2,
+              let numerator = Double(parts[0]),
+              let denominator = Double(parts[1]),
+              numerator > 0, denominator > 0 else { return nil }
+        return numerator / denominator
+    }
+}
+
 enum CompressionRatio {
+    /// Percentage of the source size that was saved. `nil` when the source size is unknown,
+    /// which also keeps malformed or zero-byte sources from dividing by zero.
     static func savedPercentage(source: Int64, output: Int64) -> Double? {
         guard source > 0 else { return nil }
         return (1 - Double(output) / Double(source)) * 100

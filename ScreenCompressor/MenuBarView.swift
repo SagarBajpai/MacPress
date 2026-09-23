@@ -11,19 +11,13 @@ struct MenuBarView: View {
                 Spacer()
                 Text(model.state).font(.caption).foregroundStyle(.secondary)
             }
-            .padding(.bottom, 10)
+            .padding(.bottom, 8)
+
+            presetPicker
 
             if let file = model.currentFile {
                 Divider()
                 currentJob(file).padding(.vertical, 11)
-            }
-
-            if model.waitingCount > 0 {
-                Divider()
-                Label(waitingLabel, systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 9)
             }
 
             if let error = model.errorMessage {
@@ -38,15 +32,18 @@ struct MenuBarView: View {
 
             Divider().padding(.bottom, 6)
             MenuActionRow(title: "Open Screenshots Folder", symbol: "folder") {
-                NSWorkspace.shared.open(model.configuration.watchDirectory)
+                NSWorkspace.shared.open(model.appConfiguration.watchDirectory)
             }
             MenuActionRow(title: "View Logs", symbol: "doc.text") { openLogs() }
+            MenuActionRow(title: "Advanced Compression…", symbol: "slider.horizontal.3") {
+                model.openAdvancedSettings()
+            }
 
             Toggle(isOn: Binding(
                 get: { model.launchAtLoginEnabled },
                 set: { model.setLaunchAtLogin($0) }
             )) {
-                Label("Launch at Login", systemImage: "power")
+                Label("Launch at Login", systemImage: "arrow.clockwise.circle")
             }
             .toggleStyle(.switch)
             .controlSize(.small)
@@ -54,7 +51,7 @@ struct MenuBarView: View {
             .padding(.vertical, 6)
 
             Divider().padding(.vertical, 6)
-            MenuActionRow(title: "Quit", symbol: "xmark.circle") {
+            MenuActionRow(title: "Quit", symbol: "power") {
                 NSApplication.shared.terminate(nil)
             }
         }
@@ -63,14 +60,36 @@ struct MenuBarView: View {
         .onAppear { model.refreshLaunchAtLogin() }
     }
 
-    private var waitingLabel: String {
-        let count = model.waitingCount
-        return count == 1 ? "1 recording waiting" : "\(count) recordings waiting"
+    private var presetPicker: some View {
+        HStack(spacing: 8) {
+            Text("Quality")
+                .font(.subheadline)
+            Spacer(minLength: 8)
+            Picker("Quality", selection: Binding(
+                get: { model.compressionConfiguration.preset },
+                set: { model.applyPreset($0) }
+            )) {
+                ForEach(CompressionPreset.selectable, id: \.self) { preset in
+                    Text(preset.displayName).tag(preset)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .frame(width: 132)
+            .help(model.compressionConfiguration.preset.detail)
+        }
     }
 
     @ViewBuilder
     private func currentJob(_ file: URL) -> some View {
         VStack(alignment: .leading, spacing: 7) {
+            if let position = model.batchPositionLabel {
+                Text(position)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Text(file.lastPathComponent)
                 .font(.subheadline.weight(.medium))
                 .lineLimit(1)
@@ -103,6 +122,10 @@ struct MenuBarView: View {
                         .controlSize(.small)
                 }
 
+                if model.isBatchActive, let overall = model.batch.fraction {
+                    overallProgress(overall)
+                }
+
                 Text(sizeSummary)
                     .font(.caption)
                     .monospacedDigit()
@@ -124,6 +147,28 @@ struct MenuBarView: View {
                 .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func overallProgress(_ fraction: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Overall")
+                Spacer()
+                Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            ProgressView(value: fraction)
+
+            if let remaining = model.remainingLabel {
+                Text(remaining)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 3)
     }
 
     private var sizeSummary: String {
@@ -159,31 +204,80 @@ struct MenuBarView: View {
     }
 
     private var recentJobs: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 3) {
             Text("Recent")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .padding(.bottom, 2)
             ForEach(model.recent) { result in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: result.failureReason == nil ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundStyle(result.failureReason == nil ? Color.green : Color.orange)
-                        .frame(width: 15)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(result.outputURL?.lastPathComponent ?? result.sourceURL.lastPathComponent)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        recentDetails(result)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                if result.outputURL == nil {
+                    // Nothing to reveal, and the row should not look disabled.
+                    RecentJobRow(result: result, reveal: nil)
+                } else {
+                    RecentJobRow(result: result) { model.revealInFinder(result) }
                 }
             }
         }
     }
 
+    private func elapsedTime(from start: Date, to now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(start)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remaining = seconds % 60
+        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, remaining) }
+        return String(format: "%02d:%02d", minutes, remaining)
+    }
+
+    private func openLogs() {
+        let log = model.appConfiguration.logDirectory.appendingPathComponent("screen-compressor.log")
+        let destination = FileManager.default.fileExists(atPath: log.path) ? log : model.appConfiguration.logDirectory
+        NSWorkspace.shared.open(destination)
+    }
+}
+
+/// One recent job. Successful jobs are clickable so the compressed file can be revealed
+/// in Finder; failed jobs have nothing to reveal.
+private struct RecentJobRow: View {
+    let result: CompressionResult
+    var reveal: (() -> Void)?
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: { reveal?() }) {
+            row
+        }
+        .buttonStyle(.plain)
+        .disabled(reveal == nil)
+        .help(reveal == nil ? "No output file" : "Show in Finder")
+        .onHover { isHovered = $0 && reveal != nil }
+    }
+
+    private var row: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: result.failureReason == nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(result.failureReason == nil ? Color.green : Color.orange)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.outputURL?.lastPathComponent ?? result.sourceURL.lastPathComponent)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                details
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .background(isHovered ? Color.accentColor.opacity(0.14) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6))
+    }
+
     @ViewBuilder
-    private func recentDetails(_ result: CompressionResult) -> some View {
+    private var details: some View {
         if let outputSize = result.outputSize {
             HStack(spacing: 4) {
                 Text("\(FileSizeFormatter.string(result.sourceSize)) → \(FileSizeFormatter.string(outputSize))")
@@ -198,21 +292,6 @@ struct MenuBarView: View {
         } else {
             Text("Failed")
         }
-    }
-
-    private func elapsedTime(from start: Date, to now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(start)))
-        let hours = seconds / 3_600
-        let minutes = (seconds % 3_600) / 60
-        let remaining = seconds % 60
-        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, remaining) }
-        return String(format: "%02d:%02d", minutes, remaining)
-    }
-
-    private func openLogs() {
-        let log = model.configuration.logDirectory.appendingPathComponent("screen-compressor.log")
-        let destination = FileManager.default.fileExists(atPath: log.path) ? log : model.configuration.logDirectory
-        NSWorkspace.shared.open(destination)
     }
 }
 

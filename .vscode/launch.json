@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:MacPress}",
+      "name": "Debug ScreenCompressor",
+      "target": "ScreenCompressor",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug ScreenCompressor"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:MacPress}",
+      "name": "Release ScreenCompressor",
+      "target": "ScreenCompressor",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release ScreenCompressor"
+    }
+  ]
+}

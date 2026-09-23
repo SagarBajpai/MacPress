@@ -2,6 +2,14 @@ import Foundation
 import XCTest
 @testable import ScreenCompressor
 
+/// Isolated defaults so tests never read or write the user's real configuration.
+func testDefaults() -> UserDefaults {
+    let suite = "ScreenCompressorTests"
+    let defaults = UserDefaults(suiteName: suite) ?? .standard
+    defaults.removePersistentDomain(forName: suite)
+    return defaults
+}
+
 final class UtilitiesTests: XCTestCase {
     func testBundledToolsTakePriorityOverInstalledTools() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -14,7 +22,7 @@ final class UtilitiesTests: XCTestCase {
             try Data("#!/bin/sh\nexit 0\n".utf8).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         }
-        let service = FFmpegService(configuration: CompressionConfiguration(), bundleURL: bundle)
+        let service = FFmpegService(bundleURL: bundle)
         XCTAssertEqual(service.executable(named: "ffmpeg"), bin.appendingPathComponent("ffmpeg"))
         XCTAssertEqual(service.executable(named: "ffprobe"), bin.appendingPathComponent("ffprobe"))
     }
@@ -82,9 +90,28 @@ final class UtilitiesTests: XCTestCase {
         XCTAssertNil(CompressionRatio.savedPercentage(source: 0, output: 1))
         XCTAssertEqual(CompressionRatio.savedPercentage(source: 100, output: 120) ?? 0, -20, accuracy: 0.001)
     }
+
+    func testExtremeReductionReportsNinetyNinePercentSaved() throws {
+        let source: Int64 = 100_000_000
+        let output: Int64 = 900_000
+        let saved = try XCTUnwrap(CompressionRatio.savedPercentage(source: source, output: output))
+        XCTAssertEqual(saved, 99.1, accuracy: 0.01)
+        XCTAssertEqual(saved.formatted(.number.precision(.fractionLength(0))), "99")
+        XCTAssertEqual(FileSizeFormatter.string(output), "900 KB")
+    }
 }
 
 private enum FakeMode: Sendable { case success, encodeFailure, invalidOutput, probeFailure, changedSource, cancelled }
+
+/// ffprobe answers as JSON, the way `MediaProbe` expects them.
+private func probeJSON(codec: String = "hevc", width: Int = 1920, height: Int = 1080,
+                       frameRate: String = "60/1", duration: String = "10.000000") -> String {
+    """
+    {"streams":[{"codec_name":"\(codec)","width":\(width),"height":\(height),
+    "avg_frame_rate":"\(frameRate)","r_frame_rate":"\(frameRate)","bit_rate":"6000000"}],
+    "format":{"duration":"\(duration)","bit_rate":"6000000"}}
+    """
+}
 
 private struct FakeRunner: MediaProcessRunning {
     let mode: FakeMode
@@ -92,10 +119,12 @@ private struct FakeRunner: MediaProcessRunning {
     func run(executable: URL, arguments: [String],
              onStdoutLine: @escaping @Sendable (String) async -> Void) async throws -> ProcessOutput {
         if arguments.first == "-v" {
-            if arguments.contains("stream=codec_name") {
-                return ProcessOutput(status: mode == .probeFailure ? 1 : 0, stdout: "hevc\n", stderr: "")
+            // Source probes point at the .mov, output verification points at the .mp4.
+            let target = arguments.last ?? ""
+            if target.hasSuffix(".mp4"), mode == .probeFailure {
+                return ProcessOutput(status: 1, stdout: "", stderr: "probe failed")
             }
-            return ProcessOutput(status: 0, stdout: "10.0\n", stderr: "")
+            return ProcessOutput(status: 0, stdout: probeJSON(), stderr: "")
         }
         guard let destinationPath = arguments.last else { throw CompressionError.invalidOutput }
         if mode == .cancelled {
@@ -128,8 +157,7 @@ final class CompressionSafetyTests: XCTestCase {
         var executables = ["ffmpeg": fakeExecutable]
         if probeAvailable { executables["ffprobe"] = fakeExecutable }
         let service = CompressionService(
-            tools: FFmpegService(configuration: CompressionConfiguration(),
-                                 executables: executables),
+            tools: FFmpegService(executables: executables),
             runner: FakeRunner(mode: mode), logger: LoggingService(configuration: config), cleanup: cleanup
         )
         return (directory, source, service)
@@ -144,7 +172,7 @@ final class CompressionSafetyTests: XCTestCase {
         let (directory, source, service) = try setup(.encodeFailure)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
-            _ = try await service.compress(source: source) { _ in }
+            _ = try await service.compress(source: source, configuration: .balanced) { _ in }
             XCTFail("Expected encode failure")
         } catch { XCTAssertTrue(FileManager.default.fileExists(atPath: source.path)) }
         XCTAssertTrue(try partialOutputs(in: directory).isEmpty)
@@ -154,7 +182,7 @@ final class CompressionSafetyTests: XCTestCase {
         let (directory, source, service) = try setup(.invalidOutput)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
-            _ = try await service.compress(source: source) { _ in }
+            _ = try await service.compress(source: source, configuration: .balanced) { _ in }
             XCTFail("Expected output verification failure")
         } catch { XCTAssertTrue(FileManager.default.fileExists(atPath: source.path)) }
         XCTAssertTrue(try partialOutputs(in: directory).isEmpty)
@@ -164,7 +192,7 @@ final class CompressionSafetyTests: XCTestCase {
         let (directory, source, service) = try setup(.probeFailure)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
-            _ = try await service.compress(source: source) { _ in }
+            _ = try await service.compress(source: source, configuration: .balanced) { _ in }
             XCTFail("Expected ffprobe verification failure")
         } catch { XCTAssertTrue(FileManager.default.fileExists(atPath: source.path)) }
         XCTAssertTrue(try partialOutputs(in: directory).isEmpty)
@@ -174,7 +202,7 @@ final class CompressionSafetyTests: XCTestCase {
         let (directory, source, service) = try setup(.changedSource)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
-            _ = try await service.compress(source: source) { _ in }
+            _ = try await service.compress(source: source, configuration: .balanced) { _ in }
             XCTFail("Expected changed source rejection")
         } catch { XCTAssertTrue(FileManager.default.fileExists(atPath: source.path)) }
         XCTAssertTrue(try partialOutputs(in: directory).isEmpty)
@@ -189,7 +217,7 @@ final class CompressionSafetyTests: XCTestCase {
         let trash = directory.appendingPathComponent("test-trash.mov")
         var service = basicService
         service.cleanup = FileCleanupService(trash: { try FileManager.default.moveItem(at: $0, to: trash) })
-        let result = try await service.compress(source: source) { _ in }
+        let result = try await service.compress(source: source, configuration: .balanced) { _ in }
         XCTAssertNotEqual(result.outputURL, existing)
         XCTAssertEqual(try Data(contentsOf: existing), Data("user output".utf8))
         XCTAssertTrue(FileManager.default.fileExists(atPath: trash.path))
@@ -202,7 +230,7 @@ final class CompressionSafetyTests: XCTestCase {
         let (directory, source, service) = try setup(.success, cleanup: cleanup)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
-            _ = try await service.compress(source: source) { _ in }
+            _ = try await service.compress(source: source, configuration: .balanced) { _ in }
             XCTFail("Expected Trash failure")
         } catch { XCTAssertTrue(FileManager.default.fileExists(atPath: source.path)) }
         let outputs = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -214,7 +242,7 @@ final class CompressionSafetyTests: XCTestCase {
     func testCancellationKeepsSourceAndRemovesPartial() async throws {
         let (directory, source, service) = try setup(.cancelled)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let job = Task { try await service.compress(source: source) { _ in } }
+        let job = Task { try await service.compress(source: source, configuration: .balanced) { _ in } }
         try await Task.sleep(for: .milliseconds(50))
         job.cancel()
         do {
@@ -232,7 +260,7 @@ final class CompressionSafetyTests: XCTestCase {
         let trash = directory.appendingPathComponent("test-trash.mov")
         var service = basicService
         service.cleanup = FileCleanupService(trash: { try FileManager.default.moveItem(at: $0, to: trash) })
-        let result = try await service.compress(source: source) { progress in
+        let result = try await service.compress(source: source, configuration: .balanced) { progress in
             XCTAssertNil(progress.fractionCompleted)
         }
         XCTAssertNotNil(result.outputURL)
@@ -256,9 +284,9 @@ final class ProcessAndStabilizationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("recording.mov")
         try Data("video".utf8).write(to: file)
-        var configuration = CompressionConfiguration()
-        configuration.stabilizationInterval = .milliseconds(1)
-        configuration.stabilizationTimeout = .seconds(1)
+        var configuration = StabilizationConfiguration()
+        configuration.interval = .milliseconds(1)
+        configuration.timeout = .seconds(1)
         try await FileStabilizationService(configuration: configuration).waitUntilStable(file)
     }
 
@@ -293,7 +321,7 @@ final class RealPipelineTests: XCTestCase {
         }
         let bundlePath = ProcessInfo.processInfo.environment["SCREEN_COMPRESSOR_TEST_APP"]
         let bundleURL = bundlePath.map { URL(fileURLWithPath: $0) } ?? Bundle.main.bundleURL
-        let tools = FFmpegService(configuration: CompressionConfiguration(), bundleURL: bundleURL)
+        let tools = FFmpegService(bundleURL: bundleURL)
         guard let ffmpeg = tools.executable(named: "ffmpeg"), tools.executable(named: "ffprobe") != nil else {
             throw XCTSkip("ffmpeg and ffprobe are required for the integration test")
         }
@@ -317,7 +345,7 @@ final class RealPipelineTests: XCTestCase {
         let service = CompressionService(tools: tools, runner: ProcessRunner(),
                                          logger: LoggingService(configuration: app), cleanup: cleanup)
         let samples = ProgressSamples()
-        let result = try await service.compress(source: source) { await samples.append($0) }
+        let result = try await service.compress(source: source, configuration: .balanced) { await samples.append($0) }
         let progress = await samples.values
         XCTAssertTrue(FileManager.default.fileExists(atPath: result.outputURL?.path ?? ""))
         XCTAssertTrue(FileManager.default.fileExists(atPath: fakeTrash.path))
@@ -351,7 +379,7 @@ private struct SerialRunner: MediaProcessRunning {
     func run(executable: URL, arguments: [String],
              onStdoutLine: @escaping @Sendable (String) async -> Void) async throws -> ProcessOutput {
         if arguments.first == "-v" {
-            return ProcessOutput(status: 0, stdout: arguments.contains("stream=codec_name") ? "hevc\n" : "1.0\n", stderr: "")
+            return ProcessOutput(status: 0, stdout: probeJSON(), stderr: "")
         }
         await counter.begin()
         try await Task.sleep(for: .milliseconds(40))
@@ -374,24 +402,24 @@ final class JobQueueTests: XCTestCase {
         try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
         let configuration = AppConfiguration(watchDirectory: directory, logDirectory: directory.appendingPathComponent("logs"))
         let logger = LoggingService(configuration: configuration)
-        var compressionConfiguration = CompressionConfiguration()
-        compressionConfiguration.stabilizationInterval = .milliseconds(1)
-        compressionConfiguration.stabilizationTimeout = .seconds(1)
+        var stabilization = StabilizationConfiguration()
+        stabilization.interval = .milliseconds(1)
+        stabilization.timeout = .seconds(1)
         let executable = URL(fileURLWithPath: "/usr/bin/true")
         let counter = EncodeCounter()
         let compressor = CompressionService(
-            tools: FFmpegService(configuration: compressionConfiguration,
-                                 executables: ["ffmpeg": executable, "ffprobe": executable]),
+            tools: FFmpegService(executables: ["ffmpeg": executable, "ffprobe": executable]),
             runner: SerialRunner(counter: counter), logger: logger,
             cleanup: FileCleanupService(trash: { source in
                 try FileManager.default.moveItem(at: source, to: trash.appendingPathComponent(source.lastPathComponent))
             })
         )
+        let settings = CompressionSettingsStore(defaults: ConfigurationDefaults(storage: testDefaults()))
         let done = expectation(description: "two jobs completed")
         done.expectedFulfillmentCount = 2
         let queue = JobQueue(directory: directory,
-                             stabilization: FileStabilizationService(configuration: compressionConfiguration),
-                             compressor: compressor, logger: logger) { event in
+                             stabilization: FileStabilizationService(configuration: stabilization),
+                             compressor: compressor, settings: settings, logger: logger) { event in
             if case .completed = event { done.fulfill() }
         }
         async let first: Void = queue.scan()
@@ -406,8 +434,109 @@ final class JobQueueTests: XCTestCase {
     }
 }
 
-final class FolderWatcherTests: XCTestCase {
-    @MainActor
+private actor BatchRecorder {
+    private(set) var events: [BatchProgress] = []
+
+    func append(_ progress: BatchProgress) {
+        events.append(progress)
+    }
+}
+
+private struct HalfwayRunner: MediaProcessRunning {
+    func run(executable: URL, arguments: [String],
+             onStdoutLine: @escaping @Sendable (String) async -> Void) async throws -> ProcessOutput {
+        if arguments.first == "-v" {
+            return ProcessOutput(status: 0, stdout: probeJSON(), stderr: "")
+        }
+        guard let output = arguments.last else { throw CompressionError.invalidOutput }
+        try Data("compressed".utf8).write(to: URL(fileURLWithPath: output))
+        // Half of the ten second duration the probe reports.
+        await onStdoutLine("out_time_us=5000000")
+        return ProcessOutput(status: 0, stdout: "", stderr: "")
+    }
+}
+
+/// Drives the real queue with several recordings and checks the overall progress it reports.
+final class BatchProgressIntegrationTests: XCTestCase {
+    func testQueueReportsOverallProgressAcrossThreeFiles() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for name in ["a.mov", "b.mov", "c.mov"] {
+            try Data("recording".utf8).write(to: directory.appendingPathComponent(name))
+        }
+        let trash = directory.appendingPathComponent("trash")
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+
+        var stabilization = StabilizationConfiguration()
+        stabilization.interval = .milliseconds(1)
+        stabilization.timeout = .seconds(1)
+        let settingsConfiguration = AppConfiguration(watchDirectory: directory,
+                                                     logDirectory: directory.appendingPathComponent("logs"))
+        let logger = LoggingService(configuration: settingsConfiguration)
+        let executable = URL(fileURLWithPath: "/usr/bin/true")
+        let compressor = CompressionService(
+            tools: FFmpegService(executables: ["ffmpeg": executable, "ffprobe": executable]),
+            runner: HalfwayRunner(), logger: logger,
+            cleanup: FileCleanupService(trash: { source in
+                try FileManager.default.moveItem(at: source, to: trash.appendingPathComponent(source.lastPathComponent))
+            })
+        )
+
+        let recorder = BatchRecorder()
+        let done = expectation(description: "batch complete")
+        done.assertForOverFulfill = false
+        let queue = JobQueue(directory: directory,
+                             stabilization: FileStabilizationService(configuration: stabilization),
+                             compressor: compressor,
+                             settings: CompressionSettingsStore(defaults: ConfigurationDefaults(storage: testDefaults())),
+                             logger: logger) { event in
+            guard case .batch(let progress) = event else { return }
+            await recorder.append(progress)
+            if progress.isComplete { done.fulfill() }
+        }
+
+        await queue.scan()
+        await fulfillment(of: [done], timeout: 10)
+        await queue.shutdown()
+
+        let events = await recorder.events
+        // The batch grows as recordings are found during the scan, but while it is running it
+        // never shrinks, so the ring cannot jump backwards because a job finished. The trailing
+        // idle event is what clears the batch once all of it is done.
+        let totals = events.filter(\.isActive).map(\.totalJobs)
+        XCTAssertEqual(totals.first, 1)
+        XCTAssertEqual(totals.max(), 3)
+        XCTAssertEqual(totals, totals.sorted(), "the batch size went backwards: \(totals)")
+        XCTAssertEqual(events.first?.completedJobs, 0)
+
+        // One recording finished, the next is half encoded, the third has not started:
+        // (1 + 0.5 + 0) / 3.
+        let halfway = try XCTUnwrap(events.first { $0.completedJobs == 1 && $0.currentFraction == 0.5 })
+        XCTAssertEqual(halfway.currentJobNumber, 2)
+        XCTAssertEqual(halfway.remainingJobs, 2)
+        XCTAssertEqual(halfway.fraction ?? 0, 0.5, accuracy: 0.0001)
+
+        let finished = try XCTUnwrap(events.last { $0.isComplete })
+        XCTAssertEqual(finished.completedJobs, 3)
+        XCTAssertEqual(finished.fraction, 1)
+        XCTAssertEqual(finished.remainingJobs, 0)
+
+        // The queue clears itself once the batch is drained.
+        XCTAssertEqual(events.last, .idle)
+
+        // Every recording was compressed and its original moved to Trash.
+        for name in ["a.mov", "b.mov", "c.mov"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: trash.appendingPathComponent(name).path))
+        }
+        let outputs = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "mp4" }
+        XCTAssertEqual(outputs.count, 3)
+    }
+}
+
+final class FolderWatcherTests: XCTestCase {    @MainActor
     func testNativeWatcherNoticesNewFile() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

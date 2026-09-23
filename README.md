@@ -1,8 +1,56 @@
 # Screen Compressor
 
+Developer and agent documentation starts at [AGENTS.md](AGENTS.md), [ARCHITECTURE.md](ARCHITECTURE.md), and the [Docs index](Docs/README.md).
+
 Screen Compressor is a native macOS menu-bar app that watches `~/Screenshots` for `.mov` recordings and converts them to HEVC `.mp4` files. It processes one recording at a time, shows ffmpeg progress, verifies each output, and then moves the original to Trash. Failed or cancelled jobs keep the original.
 
 Requires macOS 14 or later on Apple Silicon. The app includes arm64 `ffmpeg`, `ffprobe`, and their shared FFmpeg libraries; users do not need Homebrew, Terminal, or any separate tool installation. It uses the bundled tools first, then searches `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, and `PATH` only if a bundled tool is absent.
+
+## Compression presets
+
+The menu has a Quality control with five options. **Balanced is the default.** A preset sets every advanced setting at once; editing any advanced control switches the label to Custom, and returning the controls to a preset's exact values shows that preset again. The chosen configuration is saved between launches.
+
+| Preset | Intent |
+| --- | --- |
+| High | Highest fidelity, largest output. Keeps the source frame rate and resolution. |
+| Balanced | Recommended default. Near-lossless screen quality at the smallest practical size. |
+| Medium | Smaller than Balanced, text stays comfortably readable. |
+| Low | Smallest files, visible quality loss accepted. Caps the output at 1080p. |
+| Custom | Any manual change to the advanced settings. |
+
+Every preset uses HEVC in 10-bit (High, Balanced, Medium) or 8-bit (Low, for maximum player compatibility). High keeps the source frame rate and resolution. Balanced, Medium and Low cap the frame rate at 30 fps, which screen content tolerates well and which frees up enough bits to keep text sharp.
+
+### Measured results
+
+Recorded with the bundled tools on a 54.6 MB H.264 screen recording (2560x1080, 59.5 fps, 67 s) and reproduced by `PresetBenchmarks`:
+
+| Preset | Output | Saved | SSIM | Encode time |
+| --- | --- | --- | --- | --- |
+| High | 6.8 MB | 87.5% | 0.996 | 28 s |
+| Balanced | 3.8 MB | 93.1% | 0.990 | 14 s |
+| Medium | 2.8 MB | 94.9% | 0.980 | 14 s |
+| Low | 2.1 MB | 96.1% | 0.962 | 14 s |
+
+SSIM is measured against the source with the reference matched to each preset's frame rate, so the frame-rate reduction is not counted as distortion. The previous fixed command (`-q:v 28`, no keyframe interval) produced 30.5 MB for the same recording.
+
+### Why presets rather than one fixed command
+
+The previous version always used `hevc_videotoolbox -q:v 28`. That is a reasonable middle ground but it ignores the largest lever for screen recordings: **the keyframe interval**. When no interval is set, VideoToolbox emits a keyframe roughly every twelfth frame (333 keyframes in 67 seconds on the test recording). Setting an explicit ten second interval is worth about nine times the file size on its own, at the same quality:
+
+| Keyframe interval | Output at quality 45 |
+| --- | --- |
+| Encoder default | 45.8 MB |
+| 2 s | 8.6 MB |
+| 5 s | 6.0 MB |
+| 10 s | 5.2 MB |
+
+No other setting came close. The second lever is the frame rate, and the third is the quality setting, which the presets spend on keeping text and UI edges clean.
+
+The bundled FFmpeg build is deliberately VideoToolbox-only (LGPL, no GPL encoders), so `libx265` is unavailable and Apple's hardware HEVC encoder does the work. `-spatial_aq` and `-prio_speed` were both tested and produced byte-for-byte identical output with this encoder, so they are not set.
+
+### Advanced settings
+
+"Advanced Compression…" in the menu opens a settings window with the encoder controls that materially change the output: codec, quality mode, quality, bitrate and peak bitrate, constant bitrate, frame rate, resolution, colour depth, encoder profile, keyframe interval, scaling quality, and audio codec and bitrate. Settings are saved immediately and apply to recordings that have not started yet; a compression that is already running keeps the settings it started with.
 
 ## Install from a release
 

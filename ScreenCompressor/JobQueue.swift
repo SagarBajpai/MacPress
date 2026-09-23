@@ -4,20 +4,23 @@ actor JobQueue {
     private let directory: URL
     private let stabilization: FileStabilizationService
     private let compressor: CompressionService
+    private let settings: CompressionSettingsStore
     private let logger: LoggingService
     private let onEvent: @Sendable (JobEvent) async -> Void
     private var pending: [URL] = []
     private var seen: Set<URL> = []
     private var worker: Task<Void, Never>?
     private var workerScheduled = false
-    private var processing = false
     private var stopping = false
+    private var batch = BatchProgressTracker()
 
     init(directory: URL, stabilization: FileStabilizationService, compressor: CompressionService,
-         logger: LoggingService, onEvent: @escaping @Sendable (JobEvent) async -> Void) {
+         settings: CompressionSettingsStore, logger: LoggingService,
+         onEvent: @escaping @Sendable (JobEvent) async -> Void) {
         self.directory = directory
         self.stabilization = stabilization
         self.compressor = compressor
+        self.settings = settings
         self.logger = logger
         self.onEvent = onEvent
     }
@@ -56,7 +59,10 @@ actor JobQueue {
         if shouldStart { workerScheduled = true }
         await logger.log("File detected: \(canonical.path)")
         await logger.log("Job queued: \(canonical.path)")
-        await onEvent(.queued(canonical, pending.count + (processing ? 1 : 0)))
+        // The batch grows as recordings are queued but never shrinks while it runs.
+        batch.add(canonical)
+        await onEvent(.queued(canonical))
+        await onEvent(.batch(batch.progress))
         if shouldStart, !stopping { worker = Task { await drain() } }
     }
 
@@ -72,16 +78,19 @@ actor JobQueue {
     private func drain() async {
         while !pending.isEmpty, !Task.isCancelled {
             let file = pending.removeFirst()
-            processing = true
             await onEvent(.stabilizing(file))
             await logger.log("Stabilizing: \(file.path)")
             do {
                 try await stabilization.waitUntilStable(file)
                 await logger.log("Stabilized: \(file.path)")
+                // Snapshot the settings here so editing them mid-batch only affects
+                // recordings that have not started yet.
+                let configuration = await settings.configuration
+                batch.begin(file)
+                await onEvent(.batch(batch.progress))
                 await onEvent(.processing(file, CompressionProgress(fractionCompleted: nil, processedDuration: nil, speed: nil)))
-                let result = try await compressor.compress(source: file) { [onEvent, logger] progress in
-                    await logger.progress(progress.fractionCompleted, for: file)
-                    await onEvent(.processing(file, progress))
+                let result = try await compressor.compress(source: file, configuration: configuration) { progress in
+                    await self.handle(progress, for: file)
                 }
                 await logger.finishProgress(for: file)
                 await onEvent(.completed(result))
@@ -95,9 +104,26 @@ actor JobQueue {
                     await onEvent(.failed(result))
                 }
             }
-            processing = false
+            // A failed job finishes its slot too: progress has to be able to reach the end of
+            // the batch rather than stalling on a recording that could not be compressed.
+            batch.finish(file)
+            await onEvent(.batch(batch.progress))
         }
         worker = nil
         workerScheduled = false
+        // The completed state is the last thing the UI sees before the batch is cleared.
+        if !stopping {
+            batch.reset()
+            await onEvent(.batch(.idle))
+        }
+    }
+
+    private func handle(_ progress: CompressionProgress, for file: URL) async {
+        let previous = batch.progress
+        await logger.progress(progress.fractionCompleted, for: file)
+        batch.report(fraction: progress.fractionCompleted, for: file)
+        await onEvent(.processing(file, progress))
+        let updated = batch.progress
+        if updated != previous { await onEvent(.batch(updated)) }
     }
 }

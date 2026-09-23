@@ -6,6 +6,9 @@ struct AppConfiguration: Sendable {
     let recentJobLimit = 5
     let maximumLogBytes: UInt64 = 1_000_000
     let watcherDebounce: TimeInterval = 0.5
+    /// How long the completed green ring stays on screen once a batch finishes.
+    let completionFlashDuration: Duration = .milliseconds(1200)
+    let stabilization = StabilizationConfiguration()
 
     static let live = AppConfiguration(
         watchDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Screenshots"),
@@ -13,12 +16,12 @@ struct AppConfiguration: Sendable {
     )
 }
 
-struct CompressionConfiguration: Sendable {
-    var videoQuality = 28
-    var audioBitrate = "128k"
-    var stabilizationInterval: Duration = .seconds(2)
-    var stabilizationChecks = 3
-    var stabilizationTimeout: Duration = .seconds(30)
+/// Screen recordings can appear in the watched folder before macOS has finished writing
+/// them, so a file has to stop changing before it is safe to read.
+struct StabilizationConfiguration: Sendable {
+    var interval: Duration = .seconds(2)
+    var requiredChecks = 3
+    var timeout: Duration = .seconds(30)
 }
 
 struct CompressionProgress: Sendable, Equatable {
@@ -54,11 +57,12 @@ struct CompressionResult: Sendable, Identifiable {
 }
 
 enum JobEvent: Sendable {
-    case queued(URL, Int)
+    case queued(URL)
     case stabilizing(URL)
     case processing(URL, CompressionProgress)
     case completed(CompressionResult)
     case failed(CompressionResult)
+    case batch(BatchProgress)
     case monitoringError(String)
 }
 
