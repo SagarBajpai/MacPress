@@ -1,0 +1,9 @@
+.DS_Store
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.build/
+dist/
+.swiftpm/
+logs/
+*.processing.mp4
