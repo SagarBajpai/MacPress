@@ -5,12 +5,6 @@
 <h1 align="center">MacPress</h1>
 
 <p align="center">
-
- https://github.com/user-attachments/assets/63b26a30-7474-4d77-9a9b-ff05588dccfc
- 
-</p>
-
-<p align="center">
   <strong>Your Mac screen recordings. Just much smaller.</strong>
 </p>
 
@@ -23,6 +17,13 @@
   <a href="#-installation">Installation</a> •
   <a href="#-how-it-works">How it works</a> •
   <a href="/DEVELOPMENT.md">Technical Details</a> 
+</p>
+
+
+<p align="center">
+
+ https://github.com/user-attachments/assets/63b26a30-7474-4d77-9a9b-ff05588dccfc
+ 
 </p>
 
 <br>
