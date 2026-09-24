@@ -23,6 +23,8 @@ perl -0pi -e "s/MacPress-[0-9]+\\.[0-9]+\\.[0-9]+-arm64\\.dmg/MacPress-$version-
 "$project_root/scripts/release.sh"
 dmg="$project_root/dist/MacPress-$version-arm64.dmg"
 checksum="$(shasum -a 256 "$dmg" | awk '{print $1}')"
+stable_dmg="$project_root/dist/MacPress-arm64.dmg"
+cp "$dmg" "$stable_dmg"
 perl -0pi -e "s/sha256 \"[^\"]+\"/sha256 \"$checksum\"/" Casks/macpress.rb
 
 git add VERSION Resources/Info.plist ScreenCompressor.xcodeproj/project.pbxproj Casks/macpress.rb README.md DEVELOPMENT.md DMG_RELEASE.md
@@ -30,7 +32,7 @@ git commit -m "release: MacPress v$version"
 git tag -a "v$version" -m "MacPress v$version"
 git push origin HEAD
 git push origin "v$version"
-gh release create "v$version" "$dmg" --title "MacPress v$version" --generate-notes --notes "Ad-hoc signed, arm64 DMG. macOS may require Open Anyway on first launch. SHA-256: $checksum"
+gh release create "v$version" "$dmg" "$stable_dmg" --title "MacPress v$version" --generate-notes --notes "Ad-hoc signed, arm64 DMG. macOS may require Open Anyway on first launch. SHA-256: $checksum"
 
 tap_dir="$(mktemp -d "${TMPDIR:-/tmp}/homebrew-macpress.XXXXXX")"
 trap 'rm -rf "$tap_dir"' EXIT

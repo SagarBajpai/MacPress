@@ -267,6 +267,16 @@ open "$HOME/Applications/MacPress.app"
 
 Local builds are ad-hoc signed.
 
+## 🗑️ Uninstalling MacPress
+
+Run:
+
+```bash
+./scripts/uninstall.sh
+```
+
+The script asks for confirmation, quits MacPress, removes MacPress.app from the user and system Applications locations when permitted, and deletes MacPress preferences and logs. It preserves recordings and the configured watched folder. It does not modify or unload legacy LaunchAgents.
+
 ---
 
 ## 📦 Creating a release build

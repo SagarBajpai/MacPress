@@ -49,7 +49,8 @@ swift test
 ./scripts/create-dmg.sh \
   dist/MacPress.app \
   dist/MacPress-0.1.0-arm64.dmg
-shasum -a 256 dist/MacPress-0.1.0-arm64.dmg
+cp dist/MacPress-0.1.0-arm64.dmg dist/MacPress-arm64.dmg
+shasum -a 256 dist/MacPress-arm64.dmg
 ```
 
 The DMG script refuses to overwrite an existing file. Use a new versioned output path or move an old local artifact out of `dist/` before rebuilding.
@@ -81,9 +82,9 @@ Pushing a tag matching `v*.*.*` starts `.github/workflows/release.yml`. The work
 2. runs `swift test`
 3. runs `scripts/release.sh`
 4. builds the ad-hoc signed `MacPress.app`
-5. creates `MacPress-0.1.0-arm64.dmg`
+5. creates `MacPress-0.1.0-arm64.dmg` and stable `MacPress-arm64.dmg`
 6. calculates the DMG SHA-256 checksum
-7. creates the GitHub Release and uploads the DMG
+7. creates the GitHub Release and uploads both DMGs
 
 No Apple or GitHub secrets are required by the current workflow.
 
@@ -95,13 +96,13 @@ Using GitHub CLI:
 gh run list --workflow Release
 gh run watch
 gh release view v0.1.0
-gh release download v0.1.0
+gh release download v0.1.0 --pattern 'MacPress-arm64.dmg'
 ```
 
 Verify the downloaded artifact locally:
 
 ```bash
-shasum -a 256 MacPress-0.1.0-arm64.dmg
+shasum -a 256 MacPress-arm64.dmg
 ```
 
 The checksum must match the value printed by the workflow and the cask.

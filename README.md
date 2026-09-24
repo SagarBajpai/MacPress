@@ -104,13 +104,7 @@ Keep recording exactly as you already do.
     MacPress detects the file
                │
                ▼
-     Waits until it's ready
-               │
-               ▼
-       Probe → Compress
-               │
-               ▼
-         Verify output
+            Compress
                │
                ▼
     Screen Recording.mp4
@@ -135,76 +129,48 @@ MacPress currently supports **Apple Silicon Macs running macOS 14 or later**.
 Download:
 
 ```text
-MacPress-<version>-arm64.dmg
+[MacPress-arm64.dmg](https://github.com/SagarBajpai/MacPress/releases/latest/download/MacPress-arm64.dmg)
 ```
 
 from the project's GitHub Releases page.
 
 Open the DMG and drag **MacPress.app** into your **Applications** folder.
 
-To publish a release from Terminal, run `gh auth login` once and then:
-
-```bash
-./scripts/public_dmg.sh 0.1.0
-```
-
-The command updates the shared version references and cask checksum, builds the DMG, commits and pushes the release tag, creates the GitHub Release, and updates the [`SagarBajpai/homebrew-macpress`](https://github.com/SagarBajpai/homebrew-macpress) tap. It publishes externally, so run it only when the release is ready.
-
 ---
 
 ### ⚠️ First launch
 
-MacPress is open source and currently distributed with an **ad-hoc signature**.
+MacPress is open source, ad-hoc signed, and not notarized. If macOS blocks the first launch:
 
-It is **not Apple-notarized**.
+1. Click **Done** on the warning.
 
-Because of this, macOS may display a message saying that Apple cannot check MacPress for malicious software.
+   ![Apple security warning](assets/apple-warning.png)
 
-This is expected for the current release.
+2. Open **System Settings → Privacy & Security**, then click **Open Anyway**.
 
-If macOS blocks MacPress:
+   ![Open MacPress Anyway](assets/system-settings.png)
 
-1. Try opening **MacPress** once.
-2. Click **Done** if macOS shows a warning.
-3. Open **System Settings → Privacy & Security**.
-4. Scroll down to **Security**.
-5. Find the message about MacPress.
-6. Click **Open Anyway**.
-7. Confirm **Open**.
+3. Click **Open** to confirm.
 
-You can also try:
+   ![Confirm opening MacPress](assets/final-approval.png)
 
-1. Open **Applications** in Finder.
-2. Control-click **MacPress.app**.
-3. Select **Open**.
-4. Confirm **Open** if prompted.
-
-These are per-app, user-initiated exceptions.
-
-> [!WARNING]
-> You should **not disable Gatekeeper globally** to install MacPress.
-
-Because MacPress is open source, you can also inspect the source and build it yourself.
+These are per-app exceptions. Do not disable Gatekeeper globally.
 
 ---
 
 ## 🍺 Homebrew
 
-MacPress will initially be distributed through its own Homebrew tap rather than the official Homebrew Cask repository.
-
-Once the tap is published:
-
 ```bash
-brew tap sagarbajpai/macpress
-brew install --cask macpress
+brew tap SagarBajpai/macpress
+brew trust --cask SagarBajpai/macpress/macpress
+brew install --cask SagarBajpai/macpress/macpress
 ```
 
-The cask definition is maintained in the [`SagarBajpai/homebrew-macpress`](https://github.com/SagarBajpai/homebrew-macpress) tap and points to DMGs hosted by this repository. The source template lives at:
+To uninstall MacPress while preserving recordings and the watched folder:
 
-[`Casks/macpress.rb`](Casks/macpress.rb)
-
-> [!NOTE]
-> MacPress is not currently an official Homebrew Cask. The project can be submitted to the official Homebrew repository later if it meets their acceptance requirements.
+```bash
+./scripts/uninstall.sh
+```
 
 ---
 
