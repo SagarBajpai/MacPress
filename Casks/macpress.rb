@@ -7,7 +7,7 @@ cask "macpress" do
   desc "Automatically compress macOS screen recordings"
   homepage "https://github.com/SagarBajpai/MacPress"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "MacPress.app"
 end
