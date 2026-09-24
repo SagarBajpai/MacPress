@@ -8,7 +8,7 @@ output_dmg="${2:?Pass the output .dmg path}"
 
 staging="$(mktemp -d "${TMPDIR:-/tmp}/ScreenCompressorDMG.XXXXXX")"
 trap 'rm -r -- "$staging"' EXIT
-ditto "$app_directory" "$staging/ScreenCompressor.app"
+ditto "$app_directory" "$staging/MacPress.app"
 ln -s /Applications "$staging/Applications"
-hdiutil create -volname 'Screen Compressor' -srcfolder "$staging" -format UDZO "$output_dmg"
+hdiutil create -volname 'MacPress' -srcfolder "$staging" -format UDZO "$output_dmg"
 printf 'Created %s\n' "$output_dmg"

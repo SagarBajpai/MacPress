@@ -6,9 +6,10 @@ cd "$project_root"
 swift build -c release
 binary_directory="$(swift build -c release --show-bin-path)"
 lipo "$binary_directory/ScreenCompressor" -verify_arch arm64
-app_directory="$project_root/dist/ScreenCompressor.app"
+app_directory="$project_root/dist/MacPress.app"
+rm -rf "$app_directory"
 mkdir -p "$app_directory/Contents/MacOS"
-cp "$binary_directory/ScreenCompressor" "$app_directory/Contents/MacOS/ScreenCompressor"
+cp "$binary_directory/ScreenCompressor" "$app_directory/Contents/MacOS/MacPress"
 cp "$project_root/Resources/Info.plist" "$app_directory/Contents/Info.plist"
 identity="${CODESIGN_IDENTITY:--}"
 "$project_root/scripts/copy-ffmpeg-resources.sh" "$app_directory" "$identity"

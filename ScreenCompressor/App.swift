@@ -12,7 +12,7 @@ struct ScreenCompressorApp: App {
         } label: {
             Image(nsImage: model.menuBarImage)
                 .renderingMode(.original)
-                .accessibilityLabel("Screen Compressor")
+                .accessibilityLabel("MacPress")
         }
         .menuBarExtraStyle(.window)
     }

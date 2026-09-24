@@ -1,6 +1,6 @@
 import AppKit
 
-/// Draws the menu-bar icon: the Screen Compressor symbol wrapped in a green progress ring.
+/// Draws the MacPress menu-bar icon wrapped in a green progress ring.
 ///
 /// The ring is a real image rather than a template so the green survives menu-bar tinting.
 /// Colours are resolved when the image is drawn, which is also when the current appearance
@@ -15,7 +15,7 @@ enum MenuBarIcon {
 
     /// Plain template symbol. AppKit tints it for the current menu-bar appearance.
     static var idle: NSImage {
-        let base = NSImage(systemSymbolName: idleSymbolName, accessibilityDescription: "Screen Compressor")
+        let base = NSImage(systemSymbolName: idleSymbolName, accessibilityDescription: "MacPress")
         guard let base else { return NSImage(size: canvas) }
         let configured = base.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)

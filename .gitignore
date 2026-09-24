@@ -7,3 +7,12 @@ dist/
 .swiftpm/
 logs/
 *.processing.mp4
+
+# Local development context; public documentation lives in README.md and CONTRIBUTING.md.
+AGENTS.md
+CLAUDE.md
+ARCHITECTURE.md
+Docs/
+.memorix/
+.codebase-memory/
+.vscode/

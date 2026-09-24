@@ -6,7 +6,7 @@ if [[ "$input" == *.app ]]; then
     bin_directory="$input/Contents/Resources/bin"
     library_directory="$input/Contents/Frameworks"
     license_directory="$input/Contents/Resources/FFmpeg"
-    app_executable="$input/Contents/MacOS/ScreenCompressor"
+    app_executable="$input/Contents/MacOS/MacPress"
     [[ -x "$app_executable" ]] || { echo "Missing app executable." >&2; exit 1; }
     lipo "$app_executable" -verify_arch arm64
     run_tool() { "$bin_directory/$1" "${@:2}"; }

@@ -1,89 +1,293 @@
-# Screen Compressor
+<p align="center">
+  <img src="assets/macpress-icon.png" width="120" alt="MacPress icon">
+</p>
 
-Developer and agent documentation starts at [AGENTS.md](AGENTS.md), [ARCHITECTURE.md](ARCHITECTURE.md), and the [Docs index](Docs/README.md).
+<h1 align="center">MacPress</h1>
 
-Screen Compressor is a native macOS menu-bar app that watches `~/Screenshots` for `.mov` recordings and converts them to HEVC `.mp4` files. It processes one recording at a time, shows ffmpeg progress, verifies each output, and then moves the original to Trash. Failed or cancelled jobs keep the original.
+<p align="center">
+  <strong>Your Mac screen recordings. Just much smaller.</strong>
+</p>
 
-Requires macOS 14 or later on Apple Silicon. The app includes arm64 `ffmpeg`, `ffprobe`, and their shared FFmpeg libraries; users do not need Homebrew, Terminal, or any separate tool installation. It uses the bundled tools first, then searches `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, and `PATH` only if a bundled tool is absent.
+<p align="center">
+  Keep using <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>5</kbd>.
+  MacPress automatically compresses your recordings when you're done.
+</p>
 
-## Compression presets
+<p align="center">
+  <a href="#-installation">Installation</a> •
+  <a href="#-how-it-works">How it works</a> •
+  <a href="/DEVELOPMENT.md">Technical Details</a> 
+</p>
 
-The menu has a Quality control with five options. **Balanced is the default.** A preset sets every advanced setting at once; editing any advanced control switches the label to Custom, and returning the controls to a preset's exact values shows that preset again. The chosen configuration is saved between launches.
+<br>
 
-| Preset | Intent |
-| --- | --- |
-| High | Highest fidelity, largest output. Keeps the source frame rate and resolution. |
-| Balanced | Recommended default. Near-lossless screen quality at the smallest practical size. |
-| Medium | Smaller than Balanced, text stays comfortably readable. |
-| Low | Smallest files, visible quality loss accepted. Caps the output at 1080p. |
-| Custom | Any manual change to the advanced settings. |
+## ✨ Why MacPress?
 
-Every preset uses HEVC in 10-bit (High, Balanced, Medium) or 8-bit (Low, for maximum player compatibility). High keeps the source frame rate and resolution. Balanced, Medium and Low cap the frame rate at 30 fps, which screen content tolerates well and which frees up enough bits to keep text sharp.
+macOS already has a great screen recorder.
 
-### Measured results
+**The file sizes aren't so great.**
 
-Recorded with the bundled tools on a 54.6 MB H.264 screen recording (2560x1080, 59.5 fps, 67 s) and reproduced by `PresetBenchmarks`:
+MacPress lives quietly in your menu bar and watches your screen-recording folder. When a new `.mov` recording is ready, MacPress automatically compresses it using hardware-accelerated FFmpeg.
 
-| Preset | Output | Saved | SSIM | Encode time |
-| --- | --- | --- | --- | --- |
-| High | 6.8 MB | 87.5% | 0.996 | 28 s |
-| Balanced | 3.8 MB | 93.1% | 0.990 | 14 s |
-| Medium | 2.8 MB | 94.9% | 0.980 | 14 s |
-| Low | 2.1 MB | 96.1% | 0.962 | 14 s |
+No new screen-recording workflow to learn.
 
-SSIM is measured against the source with the reference matched to each preset's frame rate, so the frame-rate reduction is not counted as distortion. The previous fixed command (`-q:v 28`, no keyframe interval) produced 30.5 MB for the same recording.
+Just:
 
-### Why presets rather than one fixed command
+<p align="center">
+  <strong>⌘⇧5 &nbsp; → &nbsp; Record &nbsp; → &nbsp; MacPress &nbsp; → &nbsp; Done.</strong>
+</p>
 
-The previous version always used `hevc_videotoolbox -q:v 28`. That is a reasonable middle ground but it ignores the largest lever for screen recordings: **the keyframe interval**. When no interval is set, VideoToolbox emits a keyframe roughly every twelfth frame (333 keyframes in 67 seconds on the test recording). Setting an explicit ten second interval is worth about nine times the file size on its own, at the same quality:
+---
 
-| Keyframe interval | Output at quality 45 |
-| --- | --- |
-| Encoder default | 45.8 MB |
-| 2 s | 8.6 MB |
-| 5 s | 6.0 MB |
-| 10 s | 5.2 MB |
+<h2>MacPress in action</h2>
 
-No other setting came close. The second lever is the frame rate, and the third is the quality setting, which the presets spend on keeping text and UI edges clean.
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img
+        src="assets/main-screen.png"
+        alt="MacPress main screen"
+        width="100%"
+      >
+      <br>
+      <sub>
+        <strong>Simple by default.</strong><br>
+        Choose your quality, watched folder, and let MacPress handle the rest.
+      </sub>
+    </td>
+    <td width="50%" align="center">
+      <img
+        src="assets/advance-settings.png"
+        alt="MacPress advanced compression settings"
+        width="100%"
+      >
+      <br>
+      <sub>
+        <strong>Powerful when you need it.</strong><br>
+        Fine-tune compression settings for complete control over your output.
+      </sub>
+    </td>
+  </tr>
+</table>
 
-The bundled FFmpeg build is deliberately VideoToolbox-only (LGPL, no GPL encoders), so `libx265` is unavailable and Apple's hardware HEVC encoder does the work. `-spatial_aq` and `-prio_speed` were both tested and produced byte-for-byte identical output with this encoder, so they are not set.
+<br>
 
-### Advanced settings
+---
 
-"Advanced Compression…" in the menu opens a settings window with the encoder controls that materially change the output: codec, quality mode, quality, bitrate and peak bitrate, constant bitrate, frame rate, resolution, colour depth, encoder profile, keyframe interval, scaling quality, and audio codec and bitrate. Settings are saved immediately and apply to recordings that have not started yet; a compression that is already running keeps the settings it started with.
+## ⚡ See the difference
 
-## Install from a release
+<p align="center">
+  <strong>Example compression</strong>
+</p>
 
-Download the signed and notarized `ScreenCompressor-*-arm64.dmg`, open it, and drag Screen Compressor to Applications. Open the app from Applications. It runs in the menu bar rather than the Dock. macOS may ask for access to the Screenshots folder. Enable Launch at Login from the menu if desired. No command-line setup is needed.
+|        Original        |     |        MacPress        |
+| :--------------------: | :-: | :--------------------: |
+|      **251.7 MB**      |  →  |      **29.9 MB**       |
+| `Screen Recording.mov` |     | `Screen Recording.mp4` |
+|          100%          |     |    **88% smaller**     |
 
-## Build and install
+---
+
+## 🎬 How it works
+
+MacPress doesn't replace the screen recorder built into your Mac.
+
+Keep recording exactly as you already do.
+
+```text
+        Record with ⌘⇧5
+               │
+               ▼
+     macOS saves the .mov
+               │
+               ▼
+    MacPress detects the file
+               │
+               ▼
+     Waits until it's ready
+               │
+               ▼
+       Probe → Compress
+               │
+               ▼
+         Verify output
+               │
+               ▼
+    Screen Recording.mp4
+               │
+               ▼
+   Original moved to Trash
+    only after verification
+```
+
+MacPress watches your configured folder using native filesystem events.
+
+The compressed `.mp4` is saved beside the original recording.
+
+---
+
+## 📦 Installation
+
+MacPress currently supports **Apple Silicon Macs running macOS 14 or later**.
+
+### Download
+
+Download:
+
+```text
+MacPress-0.1.0-arm64.dmg
+```
+
+from the project's GitHub Releases page.
+
+Open the DMG and drag **MacPress.app** into your **Applications** folder.
+
+---
+
+### ⚠️ First launch
+
+MacPress is open source and currently distributed with an **ad-hoc signature**.
+
+It is **not Apple-notarized**.
+
+Because of this, macOS may display a message saying that Apple cannot check MacPress for malicious software.
+
+This is expected for the current release.
+
+If macOS blocks MacPress:
+
+1. Try opening **MacPress** once.
+2. Click **Done** if macOS shows a warning.
+3. Open **System Settings → Privacy & Security**.
+4. Scroll down to **Security**.
+5. Find the message about MacPress.
+6. Click **Open Anyway**.
+7. Confirm **Open**.
+
+You can also try:
+
+1. Open **Applications** in Finder.
+2. Control-click **MacPress.app**.
+3. Select **Open**.
+4. Confirm **Open** if prompted.
+
+These are per-app, user-initiated exceptions.
+
+> [!WARNING]
+> You should **not disable Gatekeeper globally** to install MacPress.
+
+Because MacPress is open source, you can also inspect the source and build it yourself.
+
+---
+
+## 🍺 Homebrew
+
+MacPress will initially be distributed through its own Homebrew tap rather than the official Homebrew Cask repository.
+
+Once the tap is published:
+
+```bash
+brew tap sagarbajpai/macpress
+brew install --cask macpress
+```
+
+The cask definition lives at:
+
+[`Casks/macpress.rb`](Casks/macpress.rb)
+
+> [!NOTE]
+> MacPress is not currently an official Homebrew Cask. The project can be submitted to the official Homebrew repository later if it meets their acceptance requirements.
+
+---
+
+## 📁 Watched Folder
+
+MacPress monitors one configurable folder for new `.mov` files.
+
+On startup, MacPress restores your last explicitly selected watched folder.
+
+On first launch, it may use the observed macOS Screenshot save-location preference as a best-effort hint.
+
+If a suitable location cannot be determined, MacPress asks you to choose a folder.
+
+You can change the watched folder at any time from MacPress.
+
+Compressed videos are saved in the **same folder** as their source recordings.
+
+For example:
+
+```text
+Screen Recording 2026-09-24 at 10.30.00.mov
+                        │
+                        ▼
+Screen Recording 2026-09-24 at 10.30.00.mp4
+```
+
+---
+
+## 🛠️ Build from source
+
+MacPress can be built locally without an Apple Developer Program membership.
+
+### Clone
+
+```bash
+git clone https://github.com/SagarBajpai/macpress.git
+cd macpress
+```
+
+### Build
 
 ```bash
 ./scripts/build.sh
-swift test
-SCREEN_COMPRESSOR_INTEGRATION_TESTS=1 swift test
-./scripts/install.sh
-open "$HOME/Applications/ScreenCompressor.app"
 ```
 
-`build.sh` produces an ad-hoc signed, self-contained menu-bar app at `dist/ScreenCompressor.app`. This is for local development, not public distribution. `install.sh` copies it into `~/Applications`. Open `ScreenCompressor.xcodeproj` in Xcode to edit and build the app; its build phase copies and signs the bundled tools and libraries. The Swift package remains available for command-line builds and XCTest. Launch at Login works from an installed app bundle.
+The resulting application is written to:
 
-## Release build
+```text
+dist/MacPress.app
+```
 
-The checked-in FFmpeg 9.0.2 binaries are built from the included source archive with Apple VideoToolbox support and without GPL/nonfree or Homebrew-linked libraries. To rebuild them on Apple Silicon with Xcode command-line tools, run `./scripts/build-ffmpeg.sh`. The script verifies the source archive's SHA-256 before compiling and validates the resulting arm64 tools. After any rebuild, run the app build and tests again.
-
-Public release requires an Apple Developer ID Application certificate in the keychain and notarization credentials stored with `xcrun notarytool store-credentials`. Set `DEVELOPER_ID_APPLICATION` to the certificate name and `NOTARY_PROFILE` to that stored profile, then run `./scripts/release.sh`. The script builds and tests, signs every FFmpeg dylib and executable with the hardened runtime, signs the app, creates a drag-to-Applications DMG, submits it for notarization, staples the ticket, and verifies it. It refuses to overwrite an existing DMG. Without those Apple credentials, a distributable notarized release cannot be produced; an ad-hoc local build is not equivalent.
-
-FFmpeg's LGPL-2.1-or-later notice, upstream license notes, and complete corresponding source archive are included in the app under `Contents/Resources/FFmpeg/` and in `ThirdParty/FFmpeg/`. The FFmpeg shared libraries are in `Contents/Frameworks/` so they can be replaced with compatible versions. See [the FFmpeg notice](ThirdParty/FFmpeg/NOTICE.md) for the exact build and attribution details. Distributors should review media patent obligations for their jurisdictions.
-
-Logs are stored in `~/Library/Logs/ScreenCompressor/` and rotate at roughly 1 MB. Recent jobs are kept in memory for the session. The app creates `~/Screenshots` if it is missing.
-
-## Legacy installation
-
-An older shell script or LaunchAgent may also be watching the folder. If the legacy LaunchAgent is loaded, unload it explicitly before opening Screen Compressor:
+### Install locally
 
 ```bash
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/local.screen-recording-compressor.plist"
+./scripts/install.sh
 ```
 
-This project does not change or remove legacy files or services. The previously used locations may include `~/.local/scripts/compress-screen-recording.sh`, `~/Library/LaunchAgents/local.screen-recording-compressor.plist`, and `~/.local/logs/compress-screen-recording.log`.
+Then launch:
+
+```bash
+open "$HOME/Applications/MacPress.app"
+```
+
+The local application is ad-hoc signed.
+
+## 📄 License
+
+MacPress is released under the [MIT License](LICENSE).
+
+FFmpeg is a separate project distributed under its applicable LGPL license.
+
+See:
+
+[`ThirdParty/FFmpeg/NOTICE.md`](ThirdParty/FFmpeg/NOTICE.md)
+
+and the accompanying source/license files for details.
+
+---
+
+For more Tecnical details check <a href="/DEVELOPMENT.md">Technical Details</a>
+
+<p align="center">
+  <img src="assets/macpress-icon.png" width="64" alt="MacPress">
+</p>
+
+<p align="center">
+  <strong>MacPress</strong>
+  <br>
+  Your Mac screen recordings. Just much smaller.
+</p>
+
+<p align="center">
+  <sub>Open source • Local-first • Built for Apple Silicon</sub>
+</p>
