@@ -128,9 +128,7 @@ MacPress currently supports **Apple Silicon Macs running macOS 14 or later**.
 
 Download:
 
-```text
 [MacPress-arm64.dmg](https://github.com/SagarBajpai/MacPress/releases/latest/download/MacPress-arm64.dmg)
-```
 
 from the project's GitHub Releases page.
 
