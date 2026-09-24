@@ -163,7 +163,13 @@ These are per-app exceptions. Do not disable Gatekeeper globally.
 ```bash
 brew tap SagarBajpai/macpress
 brew trust --cask SagarBajpai/macpress/macpress
-brew install --cask SagarBajpai/macpress/macpress
+brew install --cask macpress
+```
+
+To uninstall the Homebrew installation:
+
+```bash
+brew uninstall --cask macpress
 ```
 
 To uninstall MacPress while preserving recordings and the watched folder:
