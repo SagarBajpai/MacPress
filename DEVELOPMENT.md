@@ -271,6 +271,8 @@ Local builds are ad-hoc signed.
 
 ## 📦 Creating a release build
 
+The root `VERSION` file is the common release version source. `scripts/public_dmg.sh` synchronizes the app metadata, Xcode project, README, and cask when publishing.
+
 Run:
 
 ```bash
@@ -288,6 +290,17 @@ The release script:
 It does not publish anything automatically.
 
 It does not require Apple Developer credentials.
+
+## 🚀 Publishing a DMG release
+
+Use the public release command when the working tree is ready and you intend to publish externally:
+
+```bash
+gh auth login
+./scripts/public_dmg.sh 0.1.0
+```
+
+If no version is supplied, the script asks for one and defaults to `VERSION`. It runs `release.sh`, updates the cask checksum, commits the release, creates and pushes the matching Git tag, creates the GitHub Release, and updates `SagarBajpai/homebrew-macpress`. It requires write access to both repositories.
 
 The resulting output will look similar to:
 

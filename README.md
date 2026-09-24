@@ -135,12 +135,20 @@ MacPress currently supports **Apple Silicon Macs running macOS 14 or later**.
 Download:
 
 ```text
-MacPress-0.1.0-arm64.dmg
+MacPress-<version>-arm64.dmg
 ```
 
 from the project's GitHub Releases page.
 
 Open the DMG and drag **MacPress.app** into your **Applications** folder.
+
+To publish a release from Terminal, run `gh auth login` once and then:
+
+```bash
+./scripts/public_dmg.sh 0.1.0
+```
+
+The command updates the shared version references and cask checksum, builds the DMG, commits and pushes the release tag, creates the GitHub Release, and updates the [`SagarBajpai/homebrew-macpress`](https://github.com/SagarBajpai/homebrew-macpress) tap. It publishes externally, so run it only when the release is ready.
 
 ---
 
@@ -191,7 +199,7 @@ brew tap sagarbajpai/macpress
 brew install --cask macpress
 ```
 
-The cask definition lives at:
+The cask definition is maintained in the [`SagarBajpai/homebrew-macpress`](https://github.com/SagarBajpai/homebrew-macpress) tap and points to DMGs hosted by this repository. The source template lives at:
 
 [`Casks/macpress.rb`](Casks/macpress.rb)
 

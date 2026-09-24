@@ -2,7 +2,8 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$project_root/Resources/Info.plist")"
+version="$(<"$project_root/VERSION")"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VERSION must contain a semantic version such as 0.1.0" >&2; exit 1; }
 dmg="$project_root/dist/MacPress-$version-arm64.dmg"
 
 [[ ! -e "$dmg" ]] || { echo "Refusing to overwrite $dmg" >&2; exit 1; }
