@@ -5,6 +5,7 @@ app_directory="${1:?Pass the .app path}"
 identity="${2:--}"
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 vendor_dir="$project_root/ThirdParty/FFmpeg"
+icon_source="$project_root/assets/macpress-icon.png"
 bin_directory="$app_directory/Contents/Resources/bin"
 framework_directory="$app_directory/Contents/Frameworks"
 license_directory="$app_directory/Contents/Resources/FFmpeg"
@@ -18,6 +19,8 @@ done
 }
 
 mkdir -p "$bin_directory" "$framework_directory" "$license_directory/source"
+[[ -f "$icon_source" ]] || { echo "Missing app icon: $icon_source" >&2; exit 1; }
+ditto "$icon_source" "$app_directory/Contents/Resources/MacPress.png"
 for name in ffmpeg ffprobe; do
     ditto "$vendor_dir/bin/$name" "$bin_directory/$name"
 done

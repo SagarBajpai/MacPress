@@ -7,6 +7,7 @@
     <key>CFBundleIdentifier</key><string>com.sagarbajpai.ScreenCompressor</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>MacPress</string>
+    <key>CFBundleIconFile</key><string>MacPress.png</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
