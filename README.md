@@ -5,7 +5,9 @@
 <h1 align="center">MacPress</h1>
 
 <p align="center">
-  <a href="https://www.loom.com/share/9283893b58ca44a2a2d0643697b87678">▶️ Watch the installation guide on Loom</a>
+
+ https://github.com/user-attachments/assets/63b26a30-7474-4d77-9a9b-ff05588dccfc
+ 
 </p>
 
 <p align="center">
