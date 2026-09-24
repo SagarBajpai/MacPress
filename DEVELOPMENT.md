@@ -317,7 +317,7 @@ The resulting output will look similar to:
 ```text
 dist/
 ├── MacPress.app
-└── MacPress-0.1.0-arm64.dmg
+└── MacPress-0.2.0-arm64.dmg
 ```
 
 ---

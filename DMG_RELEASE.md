@@ -48,8 +48,8 @@ swift test
 ./scripts/build.sh
 ./scripts/create-dmg.sh \
   dist/MacPress.app \
-  dist/MacPress-0.1.0-arm64.dmg
-cp dist/MacPress-0.1.0-arm64.dmg dist/MacPress-arm64.dmg
+  dist/MacPress-0.2.0-arm64.dmg
+cp dist/MacPress-0.2.0-arm64.dmg dist/MacPress-arm64.dmg
 shasum -a 256 dist/MacPress-arm64.dmg
 ```
 
@@ -65,15 +65,15 @@ Review the complete diff and commit the release changes:
 git status
 git diff --check
 git add .
-git commit -m "release: MacPress v0.1.0"
+git commit -m "release: MacPress v0.2.0"
 git push origin main
 ```
 
 Create and push the matching tag:
 
 ```bash
-git tag -a v0.1.0 -m "MacPress v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "MacPress v0.2.0"
+git push origin v0.2.0
 ```
 
 Pushing a tag matching `v*.*.*` starts `.github/workflows/release.yml`. The workflow:
@@ -82,7 +82,7 @@ Pushing a tag matching `v*.*.*` starts `.github/workflows/release.yml`. The work
 2. runs `swift test`
 3. runs `scripts/release.sh`
 4. builds the ad-hoc signed `MacPress.app`
-5. creates `MacPress-0.1.0-arm64.dmg` and stable `MacPress-arm64.dmg`
+5. creates `MacPress-0.2.0-arm64.dmg` and stable `MacPress-arm64.dmg`
 6. calculates the DMG SHA-256 checksum
 7. creates the GitHub Release and uploads both DMGs
 
@@ -95,8 +95,8 @@ Using GitHub CLI:
 ```bash
 gh run list --workflow Release
 gh run watch
-gh release view v0.1.0
-gh release download v0.1.0 --pattern 'MacPress-arm64.dmg'
+gh release view v0.2.0
+gh release download v0.2.0 --pattern 'MacPress-arm64.dmg'
 ```
 
 Verify the downloaded artifact locally:
